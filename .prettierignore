@@ -1,0 +1,6 @@
+dist
+node_modules
+server/db/migrations
+Planning
+package-lock.json
+*.mp4

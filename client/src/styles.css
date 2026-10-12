@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+
+/* Design tokens from the SaafGadi UI samples. */
+@theme {
+  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Poppins', 'DM Sans', system-ui, sans-serif;
+
+  --color-canvas: #f4f1ee;
+  --color-sand: #eae5e0;
+  --color-ink: #1e1b22;
+  --color-muted: #5f5966;
+  --color-line: #e6e0da;
+  --color-line-strong: #d8d1ca;
+  --color-dots: #ddd6cf;
+  --color-track: #efe9e3;
+
+  --color-accent: #8b3fc7;
+  --color-accent-ink: #7a33b5;
+  --color-accent-deep: #5e2590;
+  --color-accent-soft: #f3eafa;
+  --color-accent-soft-2: #e9d8f7;
+  --color-accent-line: #e2d3ee;
+
+  --color-cta: #ddf45b;
+  --color-cta-line: #c2d93c;
+
+  --color-warn-soft: #fbe9c8;
+  --color-warn-ink: #7a4a00;
+  --color-amber: #e8a93a;
+  --color-danger: #9a3412;
+  --color-danger-soft: #fdece4;
+  --color-plate-blue: #1d4ed8;
+
+  --shadow-card: 0 1px 2px rgba(30, 27, 34, 0.05);
+  --shadow-float: 0 1px 2px rgba(30, 27, 34, 0.06), 0 10px 28px rgba(30, 27, 34, 0.08);
+  --shadow-nav: 0 1px 2px rgba(30, 27, 34, 0.06), 0 10px 28px rgba(30, 27, 34, 0.1);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+  /* Text links are accent purple, as in the UI samples. Buttons set their own colours. */
+  a {
+    color: var(--color-accent-ink);
+  }
+  a:hover {
+    color: var(--color-accent-deep);
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role='button'] {
+    cursor: pointer;
+  }
+}
+
+@utility dotted-top {
+  border-top: 1.5px dotted var(--color-dots);
+}
+@utility plate {
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+@utility safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
