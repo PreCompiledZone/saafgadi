@@ -65,7 +65,7 @@ All configuration lives in `.env`. Every key is listed and explained in `.env.ex
 4. **Build settings**:
    - Node version: current LTS (20 or 22)
    - Build command: `npm run build`
-   - Entry file: `dist/server/index.js` (or start command `npm start`)
+   - Entry file: `server.js` (Hostinger's default; it starts `dist/server/index.js`). `dist/server/index.js` or the start command `npm start` also work.
 5. **Configuration**: provide the keys from `.env.example` in one of two ways:
    - set them in hPanel's **Environment Variables**, or
    - upload a `.env` file to the app root with File Manager (you can edit it later without touching code).
