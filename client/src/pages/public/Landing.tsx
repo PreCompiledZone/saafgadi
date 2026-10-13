@@ -14,7 +14,7 @@ function PreviewCard() {
       <div className="bg-sand rounded-[28px] p-[18px] flex flex-col gap-2.5">
         <div className="bg-white rounded-[18px] px-4 pt-[18px] pb-3.5 shadow-float flex flex-col items-center gap-3">
           <div className="border-2 border-ink rounded-lg px-3.5 py-1.5 font-bold text-xl plate">
-            MH 14 EH 1234
+            MH 14 AB ****
           </div>
           <div className="w-full">
             <div className="h-[3px] rounded-sm bg-accent" />
