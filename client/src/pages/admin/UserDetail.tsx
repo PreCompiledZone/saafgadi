@@ -1,5 +1,5 @@
 import { LABELS } from '@shared/enums';
-import type { AdminUserDetail, SocietyDto, UserDto, VehicleDto } from '@shared/types';
+import type { AdminUserDetail, PaymentDto, SocietyDto, UserDto, VehicleDto } from '@shared/types';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../api/client';
@@ -29,6 +29,7 @@ import { ResetPasswordSheet } from './Users';
 import { SubscriptionRows } from './Subscriptions';
 import { useSocieties } from './Societies';
 import { Table, Td, Tr } from './parts';
+import { ReceiptSheet } from './Receipt';
 
 function SocietyPicker({ user, society }: { user: UserDto; society: SocietyDto | null }) {
   const toast = useToast();
@@ -174,6 +175,7 @@ export function UserDetail() {
   const q = useApi<AdminUserDetail>(['admin', 'users', id], `/admin/users/${id}`);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<VehicleDto | null>(null);
+  const [receipt, setReceipt] = useState<PaymentDto | null>(null);
   const toast = useToast();
   const addVehicle = useApiMutation(
     (v: unknown) => api.post(`/admin/users/${id}/vehicles`, v),
@@ -269,7 +271,7 @@ export function UserDetail() {
                 }
               />
               {d.payments.length ? (
-                <Table head={['Paid on', 'Amount', 'Mode', 'For']} minWidth={420}>
+                <Table head={['Paid on', 'Amount', 'Mode', 'For', '']} minWidth={480}>
                   {d.payments.map((p) => (
                     <Tr key={p.id}>
                       <Td className="whitespace-nowrap">{fullDate(p.paidOn)}</Td>
@@ -281,6 +283,11 @@ export function UserDetail() {
                         ) : null}
                       </Td>
                       <Td>{p.registrationNumber ?? 'Advance'}</Td>
+                      <Td>
+                        <Button size="sm" onClick={() => setReceipt(p)}>
+                          Receipt
+                        </Button>
+                      </Td>
                     </Tr>
                   ))}
                 </Table>
@@ -327,6 +334,7 @@ export function UserDetail() {
           {editing ? (
             <AdminVehicleSheet vehicle={editing} onClose={() => setEditing(null)} />
           ) : null}
+          {receipt ? <ReceiptSheet payment={receipt} onClose={() => setReceipt(null)} /> : null}
         </>
       )}
     </QueryView>

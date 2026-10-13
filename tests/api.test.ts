@@ -479,6 +479,10 @@ describe.runIf(up)('SaafGadi API — acceptance walkthrough', () => {
       mode: 'UPI',
       reference: 'UPI-REF-1',
       userName: 'Rohan Kulkarni',
+      // Receipt details: paid towards this subscription so far.
+      subscriptionTotal: 999,
+      paidToDate: 999,
+      periodStart: expect.any(String),
     });
 
     const csv = await admin.get('/api/admin/payments/export.csv');

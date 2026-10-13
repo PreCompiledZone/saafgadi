@@ -3,7 +3,7 @@ import type { WasherToday, WasherTodayActivity, WasherTodayItem, WashLogDto } fr
 import { useState } from 'react';
 import { api } from '../../api/client';
 import { useApi, useApiMutation } from '../../api/hooks';
-import { Check, CheckCircle, MapPin, X } from '../../components/icons';
+import { Check, CheckCircle, ChevronRight, MapPin, X } from '../../components/icons';
 import {
   Button,
   cx,
@@ -39,6 +39,7 @@ function useLogMutations() {
 function LogSheet({
   target,
   onClose,
+  onSaved,
 }: {
   target: {
     item: WasherTodayItem;
@@ -46,6 +47,7 @@ function LogSheet({
     mode: 'not-done' | 'change';
   } | null;
   onClose: () => void;
+  onSaved: () => void;
 }) {
   const { create, update } = useLogMutations();
   const toast = useToast();
@@ -82,7 +84,7 @@ function LogSheet({
           ? `${item.registrationNumber} marked done`
           : `${item.registrationNumber} marked not done`,
       );
-      onClose();
+      onSaved();
     } catch (err) {
       setError(err as Error);
     } finally {
@@ -155,11 +157,13 @@ function ActivityRow({
   a,
   onNotDone,
   onChange,
+  onLogged,
 }: {
   item: WasherTodayItem;
   a: WasherTodayActivity;
   onNotDone: () => void;
   onChange: () => void;
+  onLogged: () => void;
 }) {
   const { create } = useLogMutations();
   const toast = useToast();
@@ -224,6 +228,7 @@ function ActivityRow({
                 status: 'DONE',
               });
               toast(`${item.registrationNumber} · ${a.name} done`);
+              onLogged();
             } catch (err) {
               setError(err as Error);
             }
@@ -240,51 +245,103 @@ function ActivityRow({
   );
 }
 
-function VehicleCard({
+function vehicleSummary(item: WasherTodayItem) {
+  return `${item.vehicleLabel.split(' · ')[0]} · ${vehicleTypeLabel(item.vehicleType)} · ${item.color}`;
+}
+
+function location(item: WasherTodayItem) {
+  return [item.flatOrHouseNo && `Flat ${item.flatOrHouseNo}`, item.parkingNotes]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Compact list row; tapping it opens the vehicle's actions. */
+function VehicleRow({ item, onOpen }: { item: WasherTodayItem; onOpen: () => void }) {
+  const toDo = item.activities.filter((a) => !a.log).length;
+  const notDone = item.activities.some((a) => a.log?.status === 'NOT_DONE');
+  const where = location(item);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cx(
+        'w-full text-left bg-white rounded-[16px] px-4 py-3 shadow-card flex items-center gap-3',
+        toDo === 0 && 'opacity-70',
+      )}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="text-lg font-bold plate">{item.registrationNumber}</div>
+        <div className="text-[13px] text-muted truncate">
+          {vehicleSummary(item)} · {shortName(item.ownerName)}
+        </div>
+        {where ? <div className="text-[13px] text-muted truncate">{where}</div> : null}
+      </div>
+      {toDo > 0 ? (
+        <Tag
+          tone={item.activities.some((a) => !a.log && a.state === 'PENDING') ? 'warn' : undefined}
+        >
+          {toDo} to do
+        </Tag>
+      ) : notDone ? (
+        <span className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-warn-soft text-warn-ink">
+          <X size={15} strokeWidth={3} />
+        </span>
+      ) : (
+        <span className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-accent text-white">
+          <Check size={15} strokeWidth={3.4} />
+        </span>
+      )}
+      <ChevronRight size={18} className="text-muted shrink-0" />
+    </button>
+  );
+}
+
+/** Vehicle details with the Done / Not done / Change actions. */
+function VehicleSheet({
   item,
-  onSheet,
+  onClose,
+  onLog,
 }: {
   item: WasherTodayItem;
-  onSheet: (a: WasherTodayActivity, mode: 'not-done' | 'change') => void;
+  onClose: () => void;
+  onLog: (a: WasherTodayActivity, mode: 'not-done' | 'change') => void;
 }) {
+  const where = location(item);
   return (
-    <article className="bg-white rounded-[20px] p-4 shadow-card flex flex-col gap-3">
-      <div>
-        <div className="text-2xl font-bold plate">{item.registrationNumber}</div>
-        <div className="text-sm text-muted mt-0.5">
-          {item.vehicleLabel.split(' · ')[0]} · {vehicleTypeLabel(item.vehicleType)} · {item.color}{' '}
-          · {shortName(item.ownerName)}
+    <Sheet open onClose={onClose} title={item.registrationNumber}>
+      <div className="flex flex-col gap-3 pb-2">
+        <div className="text-sm text-muted">
+          {vehicleSummary(item)} · {shortName(item.ownerName)}
         </div>
+        {where ? (
+          <div className="flex gap-2 items-center text-sm bg-white rounded-[10px] px-2.5 py-2">
+            <MapPin size={18} className="text-muted shrink-0" />
+            <span>{where}</span>
+          </div>
+        ) : null}
+        {item.activities.map((a) => (
+          <ActivityRow
+            key={a.activityId}
+            item={item}
+            a={a}
+            onNotDone={() => onLog(a, 'not-done')}
+            onChange={() => onLog(a, 'change')}
+            onLogged={() => {
+              // Close once this was the last activity left to log.
+              if (item.activities.every((x) => x.log || x.activityId === a.activityId)) onClose();
+            }}
+          />
+        ))}
       </div>
-      {item.parkingNotes || item.flatOrHouseNo ? (
-        <div className="flex gap-2 items-center text-sm bg-canvas rounded-[10px] px-2.5 py-2">
-          <MapPin size={18} className="text-muted shrink-0" />
-          <span>
-            {[item.flatOrHouseNo && `Flat ${item.flatOrHouseNo}`, item.parkingNotes]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-        </div>
-      ) : null}
-      {item.activities.map((a) => (
-        <ActivityRow
-          key={a.activityId}
-          item={item}
-          a={a}
-          onNotDone={() => onSheet(a, 'not-done')}
-          onChange={() => onSheet(a, 'change')}
-        />
-      ))}
-    </article>
+    </Sheet>
   );
 }
 
 export function Today() {
   const q = useApi<WasherToday>(['washer', 'today'], '/washer/today', { refetchInterval: 120_000 });
   const [sheet, setSheet] = useState<{
-    item: WasherTodayItem;
-    activity: WasherTodayActivity;
-    mode: 'not-done' | 'change';
+    subscriptionId: number;
+    log?: { activityId: number; mode: 'not-done' | 'change' };
   } | null>(null);
 
   return (
@@ -292,18 +349,13 @@ export function Today() {
       {(d) => {
         const total = d.counts.toDo + d.counts.done + d.counts.notDone;
         const pct = total ? Math.round(((d.counts.done + d.counts.notDone) / total) * 100) : 0;
-        // Keep the open sheet in sync with fresh data.
-        const live = sheet
-          ? (() => {
-              const item = d.groups
-                .flatMap((g) => g.items)
-                .find((i) => i.subscriptionId === sheet.item.subscriptionId);
-              const activity = item?.activities.find(
-                (a) => a.activityId === sheet.activity.activityId,
-              );
-              return item && activity ? { ...sheet, item, activity } : null;
-            })()
-          : null;
+        // Resolve the open sheet against fresh data.
+        const openItem = sheet
+          ? d.groups.flatMap((g) => g.items).find((i) => i.subscriptionId === sheet.subscriptionId)
+          : undefined;
+        const openActivity = sheet?.log
+          ? openItem?.activities.find((a) => a.activityId === sheet.log!.activityId)
+          : undefined;
         return (
           <>
             <div
@@ -352,24 +404,41 @@ export function Today() {
                       {g.society}
                     </h2>
                     {g.items.map((item) => (
-                      <VehicleCard
+                      <VehicleRow
                         key={item.subscriptionId}
                         item={item}
-                        onSheet={(activity, mode) => setSheet({ item, activity, mode })}
+                        onOpen={() => setSheet({ subscriptionId: item.subscriptionId })}
                       />
                     ))}
                   </section>
                 ))
               )}
             </div>
+            {openItem && sheet && !sheet.log ? (
+              <VehicleSheet
+                item={openItem}
+                onClose={() => setSheet(null)}
+                onLog={(a, mode) =>
+                  setSheet({
+                    subscriptionId: openItem.subscriptionId,
+                    log: { activityId: a.activityId, mode },
+                  })
+                }
+              />
+            ) : null}
             <LogSheet
               key={
-                sheet
-                  ? `${sheet.item.subscriptionId}-${sheet.activity.activityId}-${sheet.mode}`
+                sheet?.log
+                  ? `${sheet.subscriptionId}-${sheet.log.activityId}-${sheet.log.mode}`
                   : 'none'
               }
-              target={live}
-              onClose={() => setSheet(null)}
+              target={
+                openItem && openActivity && sheet?.log
+                  ? { item: openItem, activity: openActivity, mode: sheet.log.mode }
+                  : null
+              }
+              onClose={() => setSheet(sheet ? { subscriptionId: sheet.subscriptionId } : null)}
+              onSaved={() => setSheet(null)}
             />
           </>
         );

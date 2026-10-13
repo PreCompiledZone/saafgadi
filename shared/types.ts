@@ -272,6 +272,11 @@ export interface PaymentDto {
   userMobile: string;
   registrationNumber: string | null;
   planName: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  /** Plan price, and amount paid towards it up to and including this payment. */
+  subscriptionTotal: number | null;
+  paidToDate: number | null;
   amount: number;
   mode: PaymentMode;
   reference: string | null;

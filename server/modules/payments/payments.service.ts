@@ -11,9 +11,13 @@ import { payments, plans, subscriptions, users, vehicles } from '../../db/schema
 import { audit } from '../../lib/audit';
 import { badRequest } from '../../lib/errors';
 import { toDecimal, toNumber } from '../../lib/money';
+import { qualified } from '../../lib/sql';
 import { getUser } from '../users/users.service';
 
 const recorder = alias(users, 'recorder');
+
+/** Paid towards the subscription up to and including this payment. */
+const paidToDateSql = sql<string>`(select coalesce(sum(\`earlier\`.\`amount\`), 0) from \`payments\` \`earlier\` where \`earlier\`.\`subscription_id\` = ${qualified(payments.subscriptionId)} and \`earlier\`.\`id\` <= ${qualified(payments.id)})`;
 
 export interface PaymentFilter {
   page: number;
@@ -46,6 +50,10 @@ function baseQuery(db: DbOrTx) {
       userMobile: users.mobile,
       reg: vehicles.registrationNumber,
       planName: plans.name,
+      startDate: subscriptions.startDate,
+      endDate: subscriptions.endDate,
+      subscriptionTotal: subscriptions.totalAmount,
+      paidToDate: paidToDateSql,
       recordedByName: recorder.name,
     })
     .from(payments)
@@ -68,6 +76,10 @@ function toDto(r: Row): PaymentDto {
     userMobile: r.userMobile,
     registrationNumber: r.reg ? formatRegistration(r.reg) : null,
     planName: r.planName,
+    periodStart: r.startDate,
+    periodEnd: r.endDate,
+    subscriptionTotal: r.subscriptionTotal === null ? null : toNumber(r.subscriptionTotal),
+    paidToDate: r.p.subscriptionId ? toNumber(r.paidToDate) : null,
     amount: toNumber(r.p.amount),
     mode: r.p.mode,
     reference: r.p.reference,

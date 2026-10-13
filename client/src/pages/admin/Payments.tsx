@@ -25,12 +25,15 @@ import {
 import { fullDate, money } from '../../lib/format';
 import { todayIst } from '../../lib/forms';
 import { SearchBox, Table, Td, Tr, UserPicker } from './parts';
+import { ReceiptSheet } from './Receipt';
 
 function RecordPaymentSheet({
   onClose,
+  onRecorded,
   presetUserId,
 }: {
   onClose: () => void;
+  onRecorded: (p: PaymentDto) => void;
   presetUserId?: number;
 }) {
   const toast = useToast();
@@ -151,7 +154,7 @@ function RecordPaymentSheet({
                 notes: notes || null,
               });
               toast(`${money(p.amount)} recorded for ${p.userName}`);
-              onClose();
+              onRecorded(p);
             } catch {
               /* shown */
             }
@@ -189,6 +192,7 @@ export function Payments() {
     setParams(next, { replace: true });
   };
   const recording = params.get('record') === '1';
+  const [receipt, setReceipt] = useState<PaymentDto | null>(null);
 
   return (
     <>
@@ -275,8 +279,9 @@ export function Payments() {
                     'Reference',
                     'For',
                     'Recorded by',
+                    '',
                   ]}
-                  minWidth={860}
+                  minWidth={940}
                 >
                   {d.items.map((p) => (
                     <Tr key={p.id}>
@@ -306,6 +311,11 @@ export function Payments() {
                         )}
                       </Td>
                       <Td>{p.recordedByName}</Td>
+                      <Td>
+                        <Button size="sm" onClick={() => setReceipt(p)}>
+                          Receipt
+                        </Button>
+                      </Td>
                     </Tr>
                   ))}
                 </Table>
@@ -326,8 +336,13 @@ export function Payments() {
         <RecordPaymentSheet
           presetUserId={Number(params.get('userId')) || undefined}
           onClose={() => update({ record: '' })}
+          onRecorded={(p) => {
+            update({ record: '' });
+            setReceipt(p);
+          }}
         />
       ) : null}
+      {receipt ? <ReceiptSheet payment={receipt} onClose={() => setReceipt(null)} /> : null}
     </>
   );
 }
