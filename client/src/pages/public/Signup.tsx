@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { addressSchema, personalSchema } from '@shared/schemas';
+import { addressSchema, signupPersonalSchema } from '@shared/schemas';
 import type { SessionUser } from '@shared/types';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -7,13 +7,14 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { z } from 'zod';
 import { api, ApiError } from '../../api/client';
 import { ChevronLeft, ChevronRight } from '../../components/icons';
+import { EmailVerify } from '../../components/EmailVerify';
 import { Button, Field, FormError, Input } from '../../components/ui';
 import { SocietyField } from '../../components/SocietyField';
 import { VehicleForm, type VehicleFormValues } from '../../components/VehicleForm';
 import { useAuthActions } from '../../lib/auth';
 import { applyServerErrors } from '../../lib/forms';
 
-type Personal = z.output<typeof personalSchema>;
+type Personal = z.output<typeof signupPersonalSchema>;
 type Address = z.output<typeof addressSchema>;
 
 const PROGRESS = ['33%', '60%', '82%'];
@@ -67,8 +68,8 @@ function PersonalStep({
   onNext: (v: Personal) => void;
   serverError?: ApiError;
 }) {
-  const form = useForm<z.input<typeof personalSchema>, unknown, Personal>({
-    resolver: zodResolver(personalSchema),
+  const form = useForm<z.input<typeof signupPersonalSchema>, unknown, Personal>({
+    resolver: zodResolver(signupPersonalSchema),
     defaultValues: initial ?? { name: '', mobile: '', email: '', password: '' },
   });
   const { register, handleSubmit, formState, setError } = form;
@@ -105,7 +106,12 @@ function PersonalStep({
           invalid={!!e.mobile}
         />
       </Field>
-      <Field label="Email (optional)" htmlFor="email" error={e.email?.message}>
+      <Field
+        label="Email"
+        htmlFor="email"
+        error={e.email?.message}
+        hint="We’ll send a code to verify it, and use it if you forget your password"
+      >
         <Input
           id="email"
           type="email"
@@ -204,6 +210,56 @@ function AddressStep({ initial, onNext }: { initial?: Address; onNext: (v: Addre
   );
 }
 
+function ChangeEmail({
+  current,
+  onDone,
+  onCancel,
+}: {
+  current: string;
+  onDone: (user: SessionUser) => void;
+  onCancel: () => void;
+}) {
+  const [email, setEmail] = useState(current);
+  const [error, setError] = useState<Error | null>(null);
+  const [saving, setSaving] = useState(false);
+  return (
+    <form
+      noValidate
+      className="flex flex-col gap-4"
+      onSubmit={async (ev) => {
+        ev.preventDefault();
+        setSaving(true);
+        setError(null);
+        try {
+          const { user } = await api.put<{ user: SessionUser }>('/auth/email', { email });
+          onDone(user);
+        } catch (err) {
+          setError(err as Error);
+        } finally {
+          setSaving(false);
+        }
+      }}
+    >
+      <Field label="Email" htmlFor="new-email">
+        <Input
+          id="new-email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(ev) => setEmail(ev.target.value)}
+        />
+      </Field>
+      <FormError error={error} />
+      <Button type="submit" variant="cta" size="lg" block loading={saving}>
+        Save and send code
+      </Button>
+      <Button variant="ghost" onClick={onCancel}>
+        Cancel
+      </Button>
+    </form>
+  );
+}
+
 export function Signup() {
   const [step, setStep] = useState(1);
   const [personal, setPersonal] = useState<Personal>();
@@ -212,6 +268,8 @@ export function Signup() {
   const [personalError, setPersonalError] = useState<ApiError>();
   const [skipError, setSkipError] = useState<string>();
   const [skipping, setSkipping] = useState(false);
+  const [created, setCreated] = useState<{ user: SessionUser; registration?: string }>();
+  const [changing, setChanging] = useState(false);
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { signedIn } = useAuthActions();
@@ -223,12 +281,9 @@ export function Signup() {
         ...address,
         vehicles: v ? [v] : [],
       });
-      await signedIn(user);
-      const plan = params.get('plan');
-      navigate(`/app/welcome${plan ? `?plan=${plan}` : ''}`, {
-        replace: true,
-        state: { registration: v?.registrationNumber },
-      });
+      // The session cookie is set; sign in on this page only after the email
+      // step, since signed-in users are sent away from /signup.
+      setCreated({ user, registration: v?.registrationNumber });
     } catch (err) {
       if (err instanceof ApiError && ['MOBILE_TAKEN', 'EMAIL_TAKEN'].includes(err.code)) {
         setPersonalError(err);
@@ -240,6 +295,64 @@ export function Signup() {
   }
 
   const back = () => (step === 1 ? navigate(-1) : setStep(step - 1));
+
+  async function finish(user: SessionUser) {
+    await signedIn(user);
+    const plan = params.get('plan');
+    navigate(`/app/welcome${plan ? `?plan=${plan}` : ''}`, {
+      replace: true,
+      state: { registration: created?.registration },
+    });
+  }
+
+  if (created) {
+    return (
+      <div className="pb-10">
+        <div className="h-1 bg-accent" />
+        <div className="mx-auto max-w-md px-5 pt-8 flex flex-col gap-6">
+          <Heading
+            title="Check your email"
+            sub="Enter the code we sent to verify your email. It’s valid for 10 minutes."
+          />
+          {changing ? (
+            <ChangeEmail
+              current={created.user.email ?? ''}
+              onDone={(user) => {
+                setCreated({ ...created, user });
+                setChanging(false);
+              }}
+              onCancel={() => setChanging(false)}
+            />
+          ) : (
+            <>
+              <EmailVerify
+                key={created.user.email}
+                email={created.user.email ?? ''}
+                autoSend
+                onVerified={finish}
+              />
+              <div className="flex flex-col items-center gap-1">
+                <button
+                  type="button"
+                  className="p-2 text-[15px] font-semibold text-accent-ink"
+                  onClick={() => setChanging(true)}
+                >
+                  Wrong email? Change it
+                </button>
+                <button
+                  type="button"
+                  className="p-2 text-sm text-muted"
+                  onClick={() => finish(created.user)}
+                >
+                  Skip for now
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-10">

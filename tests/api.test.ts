@@ -142,10 +142,25 @@ describe.runIf(up)('SaafGadi API — acceptance walkthrough', () => {
   });
 
   it('4. visitor signs up with a sedan MH14EH1234 and becomes a USER', async () => {
+    // Email is required for self sign-up.
+    const noEmail = await agent(app).post('/api/auth/signup').send({
+      name: 'No Email',
+      mobile: '9820077777',
+      email: '',
+      password: 'secret123',
+      societyOrBuilding: 'A',
+      flatOrHouseNo: '1',
+      area: 'A',
+      city: 'Pune',
+      pincode: '411001',
+    });
+    expect(noEmail.status).toBe(400);
+    expect(noEmail.body.error.details.fieldErrors.email).toBeTruthy();
+
     const res = await user.post('/api/auth/signup').send({
       name: 'Rohan Kulkarni',
       mobile: '98200 12345',
-      email: '',
+      email: 'Rohan@Example.com',
       password: 'rohan1234',
       societyOrBuilding: 'Kumar Pebble Park',
       flatOrHouseNo: 'B-402',
@@ -165,7 +180,11 @@ describe.runIf(up)('SaafGadi API — acceptance walkthrough', () => {
       ],
     });
     expect(res.status).toBe(201);
-    expect(res.body.user.role).toBe('USER');
+    expect(res.body.user).toMatchObject({
+      role: 'USER',
+      email: 'rohan@example.com',
+      emailVerified: false,
+    });
     userId = res.body.user.id;
 
     const vehicles = await user.get('/api/me/vehicles');
@@ -179,6 +198,7 @@ describe.runIf(up)('SaafGadi API — acceptance walkthrough', () => {
       .send({
         name: 'X',
         mobile: '9820099999',
+        email: 'x@example.com',
         password: 'xxxxxxxx',
         societyOrBuilding: 'A',
         flatOrHouseNo: '1',

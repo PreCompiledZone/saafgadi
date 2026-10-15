@@ -53,8 +53,34 @@ const envSchema = z.object({
   SEED_ADMIN_EMAIL: optional,
   SEED_ADMIN_PASSWORD: optional,
 
+  SMTP_HOST: optional,
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+  SMTP_SECURE: bool.default('true'),
+  SMTP_USER: optional,
+  SMTP_PASS: optional,
+  MAIL_FROM: optional,
+  MAIL_REPLY_TO: optional,
+  MAIL_ENABLED: bool.default('false'),
+
+  OTP_LENGTH: z.coerce.number().int().min(4).max(8).default(6),
+  OTP_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
+  OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(0).max(3600).default(60),
+  OTP_MAX_SENDS_PER_HOUR: z.coerce.number().int().min(1).max(100).default(3),
+  OTP_MAX_SENDS_PER_IP_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(10),
+
   RUN_MIGRATIONS_ON_START: bool.default('true'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+});
+
+/** Sending real email needs every SMTP key. */
+const MAIL_KEYS = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM'] as const;
+const checkedEnvSchema = envSchema.superRefine((env, ctx) => {
+  if (!env.MAIL_ENABLED) return;
+  for (const key of MAIL_KEYS) {
+    if (!env[key])
+      ctx.addIssue({ code: 'custom', path: [key], message: 'is required when MAIL_ENABLED=true' });
+  }
 });
 
 export type Config = ReturnType<typeof buildConfig>;
@@ -88,6 +114,24 @@ function buildConfig(env: z.infer<typeof envSchema>) {
       email: env.SEED_ADMIN_EMAIL,
       password: env.SEED_ADMIN_PASSWORD,
     },
+    mail: {
+      enabled: env.MAIL_ENABLED,
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE,
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
+      from: env.MAIL_FROM,
+      replyTo: env.MAIL_REPLY_TO,
+    },
+    otp: {
+      length: env.OTP_LENGTH,
+      ttlMinutes: env.OTP_TTL_MINUTES,
+      maxAttempts: env.OTP_MAX_ATTEMPTS,
+      resendCooldownSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
+      maxSendsPerHour: env.OTP_MAX_SENDS_PER_HOUR,
+      maxSendsPerIpPerHour: env.OTP_MAX_SENDS_PER_IP_PER_HOUR,
+    },
     runMigrationsOnStart: env.RUN_MIGRATIONS_ON_START,
     logLevel: env.LOG_LEVEL,
   };
@@ -106,7 +150,7 @@ export function loadConfig(): Config {
     throw new ConfigError(`ENV_FILE points to ${envFile}, which does not exist.`);
   }
 
-  const parsed = envSchema.safeParse(process.env);
+  const parsed = checkedEnvSchema.safeParse(process.env);
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`);
     throw new ConfigError(

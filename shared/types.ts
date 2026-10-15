@@ -29,6 +29,8 @@ export interface SessionUser {
   name: string;
   mobile: string;
   email: string | null;
+  /** The email has been confirmed with a code sent to it. */
+  emailVerified: boolean;
   role: Role;
 }
 

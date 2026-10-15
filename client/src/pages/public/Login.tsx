@@ -5,7 +5,6 @@ import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import { Logo } from '../../components/brand';
-import { ContactButtons } from '../../components/contact';
 import { Button, Field, FormError, Input } from '../../components/ui';
 import { HOME_FOR, useAuthActions } from '../../lib/auth';
 
@@ -69,11 +68,12 @@ export function Login() {
         </Button>
       </form>
 
-      <div className="mt-8 bg-white rounded-[18px] p-5 shadow-card">
-        <div className="font-semibold">Forgot password?</div>
-        <p className="text-sm text-muted mt-1 mb-3.5">Contact us and we’ll reset it for you.</p>
-        <ContactButtons message="Hi, I forgot my password. Please help me reset it." />
-      </div>
+      <Link
+        to="/forgot-password"
+        className="block text-center mt-5 p-2 text-[15px] font-semibold no-underline"
+      >
+        Forgot password?
+      </Link>
 
       <p className="text-center text-[15px] text-muted mt-8">
         New here?{' '}

@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import { OTP_PURPOSES } from '../enums';
 import {
   mobileSchema,
   optionalEmail,
+  requiredEmail,
   passwordSchema,
   pincodeSchema,
   requiredText,
@@ -45,7 +47,10 @@ export function requireSociety(
 
 export const addressSchema = addressFields.superRefine(requireSociety);
 
-export const signupSchema = personalSchema
+/** Self sign-up: email is required so it can be verified and used for password resets. */
+export const signupPersonalSchema = personalSchema.extend({ email: requiredEmail });
+
+export const signupSchema = signupPersonalSchema
   .merge(addressFields)
   .extend({
     vehicles: z.array(vehicleInputSchema).max(10).default([]),
@@ -68,3 +73,23 @@ export const changePasswordSchema = z
     message: 'New password must be different',
     path: ['newPassword'],
   });
+
+const otpCode = z
+  .string()
+  .trim()
+  .regex(/^\d{4,8}$/, 'Enter the code from the email');
+
+export const otpSendSchema = z.object({
+  email: requiredEmail,
+  purpose: z.enum(OTP_PURPOSES),
+});
+
+export const verifyEmailSchema = z.object({ code: otpCode });
+
+export const changeEmailSchema = z.object({ email: requiredEmail });
+
+export const passwordResetSchema = z.object({
+  email: requiredEmail,
+  code: otpCode,
+  newPassword: passwordSchema,
+});

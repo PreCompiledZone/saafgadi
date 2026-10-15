@@ -38,6 +38,7 @@ describe.runIf(up)('Societies', () => {
     const res = await a.post('/api/auth/signup').send({
       name,
       mobile,
+      email: `${mobile}@example.com`,
       password: 'secret123',
       ...address(addr),
       vehicles: [car(reg)],
@@ -132,7 +133,13 @@ describe.runIf(up)('Societies', () => {
   it('signup needs a society: picked or typed', async () => {
     const res = await agent(app)
       .post('/api/auth/signup')
-      .send({ name: 'X', mobile: '9822222229', password: 'secret123', ...address({}) });
+      .send({
+        name: 'X',
+        mobile: '9822222229',
+        email: 'x9822222229@example.com',
+        password: 'secret123',
+        ...address({}),
+      });
     expect(res.status).toBe(400);
     expect(res.body.error.details.fieldErrors.societyOrBuilding).toBeTruthy();
   });

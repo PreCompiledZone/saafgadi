@@ -23,7 +23,7 @@ import { listPayments } from '../payments/payments.service';
 import { findSubscriptions } from '../subscriptions/subscription.repo';
 import { listUserVehicles } from '../vehicles/vehicles.service';
 import { getSociety, societyFields } from '../societies/societies.service';
-import { toUserDto } from './users.repo';
+import { emailChange, toUserDto } from './users.repo';
 
 export const MAX_ADMINS = 2;
 
@@ -35,10 +35,15 @@ export async function getUser(id: number, role?: Role): Promise<UserDto> {
 
 export async function updateProfile(id: number, input: z.output<typeof profileUpdateSchema>) {
   const db = getDb();
-  await assertContactFree(db, (await getUser(id)).mobile, input.email, id);
+  const current = await getUser(id);
+  await assertContactFree(db, current.mobile, input.email, id);
   await db
     .update(users)
-    .set({ ...input, ...(await societyFields(db, input)) })
+    .set({
+      ...input,
+      ...(await societyFields(db, input)),
+      ...emailChange(current.email, input.email),
+    })
     .where(eq(users.id, id));
   return getUser(id);
 }
@@ -165,7 +170,7 @@ export async function updateUser(
       : {};
   await db
     .update(users)
-    .set({ ...input, ...society })
+    .set({ ...input, ...society, ...emailChange(current.email, input.email) })
     .where(eq(users.id, id));
   await audit(db, actorId, 'USER_UPDATED', 'user', id, {
     isActive: input.isActive,

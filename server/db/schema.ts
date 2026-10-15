@@ -13,6 +13,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  tinyint,
   uniqueIndex,
   varchar,
 } from 'drizzle-orm/mysql-core';
@@ -22,6 +23,8 @@ import {
   ENQUIRY_STATUSES,
   ENQUIRY_TYPES,
   NOT_DONE_REASONS,
+  OTP_CHANNELS,
+  OTP_PURPOSES,
   PAYMENT_MODES,
   ROLES,
   SUBSCRIPTION_STATUSES,
@@ -52,6 +55,8 @@ export const users = mysqlTable(
     name: varchar('name', { length: 120 }).notNull(),
     mobile: varchar('mobile', { length: 10 }).notNull(),
     email: varchar('email', { length: 190 }),
+    /** Set once the customer enters a code sent to `email`; cleared when the email changes. */
+    emailVerifiedAt: datetime('email_verified_at', { mode: 'date' }),
     passwordHash: varchar('password_hash', { length: 100 }).notNull(),
     role: mysqlEnum('role', ROLES).notNull().default('USER'),
     isActive: boolean('is_active').notNull().default(true),
@@ -65,6 +70,8 @@ export const users = mysqlTable(
     city: varchar('city', { length: 80 }),
     pincode: varchar('pincode', { length: 6 }),
     lastLoginAt: datetime('last_login_at', { mode: 'date' }),
+    /** Bumped on password reset; sessions signed with an older version stop working. */
+    tokenVersion: int('token_version').notNull().default(0),
     ...timestamps,
   },
   (t) => [
@@ -272,6 +279,32 @@ export const enquiries = mysqlTable(
     ...timestamps,
   },
   (t) => [index('enquiries_status_idx').on(t.status), index('enquiries_user_idx').on(t.userId)],
+);
+
+/**
+ * One-time codes. Only an HMAC of the code is stored. Rows are written with
+ * the app clock (not CURRENT_TIMESTAMP) so expiry and rate limits are testable.
+ */
+export const otpCodes = mysqlTable(
+  'otp_codes',
+  {
+    id: id(),
+    channel: mysqlEnum('channel', OTP_CHANNELS).notNull(),
+    /** Email, lower-case and trimmed. */
+    destination: varchar('destination', { length: 255 }).notNull(),
+    purpose: mysqlEnum('purpose', OTP_PURPOSES).notNull(),
+    userId: ref('user_id').references(() => users.id),
+    codeHash: varchar('code_hash', { length: 255 }).notNull(),
+    attempts: tinyint('attempts').notNull().default(0),
+    expiresAt: datetime('expires_at', { mode: 'date' }).notNull(),
+    consumedAt: datetime('consumed_at', { mode: 'date' }),
+    requestIp: varchar('request_ip', { length: 45 }).notNull(),
+    createdAt: datetime('created_at', { mode: 'date' }).notNull(),
+  },
+  (t) => [
+    index('otp_codes_dest_idx').on(t.destination, t.purpose, t.createdAt),
+    index('otp_codes_ip_idx').on(t.requestIp, t.createdAt),
+  ],
 );
 
 export const settings = mysqlTable(

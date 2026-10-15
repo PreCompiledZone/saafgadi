@@ -30,6 +30,14 @@ export const optionalText = (max = 255) =>
 export const requiredText = (max = 255, message = 'Required') =>
   z.string().trim().min(1, message).max(max);
 
+export const requiredEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(1, 'Enter your email')
+  .email('Enter a valid email')
+  .max(190);
+
 export const optionalEmail = z
   .string()
   .trim()

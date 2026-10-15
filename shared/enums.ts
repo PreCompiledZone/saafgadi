@@ -1,6 +1,13 @@
 export const ROLES = ['ADMIN', 'WASHER', 'USER'] as const;
 export type Role = (typeof ROLES)[number];
 
+/** Where a one-time code is sent; 'SMS' can be added later. */
+export const OTP_CHANNELS = ['EMAIL'] as const;
+export type OtpChannel = (typeof OTP_CHANNELS)[number];
+
+export const OTP_PURPOSES = ['VERIFY_EMAIL', 'RESET_PASSWORD'] as const;
+export type OtpPurpose = (typeof OTP_PURPOSES)[number];
+
 export const VEHICLE_CATEGORIES = ['CAR', 'BIKE'] as const;
 export type VehicleCategory = (typeof VEHICLE_CATEGORIES)[number];
 

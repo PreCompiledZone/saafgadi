@@ -13,6 +13,7 @@ import { Calendar, Car, Check, Phone, Plus, WhatsApp, X } from '../../components
 import { StatusBadge } from '../../components/status';
 import {
   AnchorButton,
+  Button,
   Card,
   cx,
   Dot,
@@ -22,8 +23,10 @@ import {
   Plate,
   Progress,
   QueryView,
+  Sheet,
   Tag,
   TimelineItem,
+  useToast,
 } from '../../components/ui';
 import { bookingMessage, greeting, telTo, whatsappLink, whatsappTo } from '../../lib/contact';
 import {
@@ -35,7 +38,8 @@ import {
   shortDate,
   timeOf,
 } from '../../lib/format';
-import { useSession } from '../../lib/auth';
+import { useAuthActions, useSession } from '../../lib/auth';
+import { EmailVerify } from '../../components/EmailVerify';
 
 export function WashTimeline({
   logs,
@@ -276,6 +280,42 @@ function VehicleSummary({ v, today }: { v: UserVehicleSummary; today: string }) 
   );
 }
 
+/** Shown while the customer's email is unverified; the code is entered in a sheet. */
+function VerifyEmailBanner() {
+  const { user } = useSession();
+  const { signedIn } = useAuthActions();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  if (!user?.email || user.emailVerified) return null;
+  return (
+    <>
+      <div className="flex items-center gap-3 rounded-[16px] bg-accent-soft text-accent-deep px-4 py-3">
+        <span className="flex-1 text-sm font-medium">
+          Verify your email to reset your password yourself
+        </span>
+        <Button size="sm" variant="cta" onClick={() => setOpen(true)}>
+          Send code
+        </Button>
+      </div>
+      {open ? (
+        <Sheet open onClose={() => setOpen(false)} title="Verify your email">
+          <div className="pb-2">
+            <EmailVerify
+              email={user.email}
+              autoSend
+              onVerified={async (u) => {
+                await signedIn(u);
+                setOpen(false);
+                toast('Email verified');
+              }}
+            />
+          </div>
+        </Sheet>
+      ) : null}
+    </>
+  );
+}
+
 export function Dashboard() {
   const q = useApi<UserDashboard>(['me', 'dashboard'], '/me/dashboard');
   const [selected, setSelected] = useState<number | null>(null);
@@ -291,6 +331,7 @@ export function Dashboard() {
                 Hi {firstName(d.name)}
               </h1>
             </div>
+            <VerifyEmailBanner />
             {d.vehicles.length > 1 ? (
               <div
                 className="flex gap-2 overflow-x-auto -mx-5 px-5 pb-1"

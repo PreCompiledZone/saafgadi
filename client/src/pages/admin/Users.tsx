@@ -9,7 +9,7 @@ import type { z } from 'zod';
 import { api, qs } from '../../api/client';
 import { useApi, useApiMutation } from '../../api/hooks';
 import { Pagination } from '../../components/Pagination';
-import { Plus } from '../../components/icons';
+import { CheckCircle, Plus } from '../../components/icons';
 import {
   Badge,
   Button,
@@ -197,11 +197,27 @@ export function Users() {
           {(d) =>
             d.items.length ? (
               <>
-                <Table head={['Name', 'Mobile', 'Society / flat', 'Area', 'Joined', 'Status']}>
+                <Table
+                  head={['Name', 'Mobile', 'Email', 'Society / flat', 'Area', 'Joined', 'Status']}
+                >
                   {d.items.map((u) => (
                     <Tr key={u.id} onClick={() => navigate(`/admin/users/${u.id}`)}>
                       <Td className="font-semibold">{u.name}</Td>
                       <Td>{u.mobile}</Td>
+                      <Td className="max-w-[220px]">
+                        {u.email ? (
+                          <span className="inline-flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">{u.email}</span>
+                            {u.emailVerified ? (
+                              <span title="Email verified" aria-label="Email verified">
+                                <CheckCircle size={16} className="text-accent-ink shrink-0" />
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </Td>
                       <Td>
                         {[u.societyOrBuilding, u.flatOrHouseNo].filter(Boolean).join(', ') || '—'}
                       </Td>

@@ -14,6 +14,7 @@ export interface AuthUser {
   name: string;
   mobile: string;
   email: string | null;
+  emailVerified: boolean;
   role: Role;
 }
 
@@ -26,11 +27,13 @@ declare module 'express-serve-static-core' {
 interface TokenPayload {
   sub: string;
   role: Role;
+  /** users.token_version when signed; missing on tokens from before it existed. */
+  tv?: number;
 }
 
-export function signToken(user: { id: number; role: Role }): string {
+export function signToken(user: { id: number; role: Role; tokenVersion: number }): string {
   const { jwtSecret, jwtExpiresIn } = getConfig().auth;
-  return jwt.sign({ role: user.role }, jwtSecret, {
+  return jwt.sign({ role: user.role, tv: user.tokenVersion }, jwtSecret, {
     subject: String(user.id),
     expiresIn: (/^\d+$/.test(jwtExpiresIn)
       ? Number(jwtExpiresIn)
@@ -90,17 +93,27 @@ export async function loadUser(req: Request, res: Response, next: NextFunction) 
       name: users.name,
       mobile: users.mobile,
       email: users.email,
+      emailVerifiedAt: users.emailVerifiedAt,
       role: users.role,
       isActive: users.isActive,
+      tokenVersion: users.tokenVersion,
     })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);
-  if (!row || !row.isActive) {
+  // Deactivated, or signed out everywhere by a password reset.
+  if (!row || !row.isActive || (payload.tv ?? 0) !== row.tokenVersion) {
     clearAuthCookie(res);
     return next();
   }
-  req.user = { id: row.id, name: row.name, mobile: row.mobile, email: row.email, role: row.role };
+  req.user = {
+    id: row.id,
+    name: row.name,
+    mobile: row.mobile,
+    email: row.email,
+    emailVerified: !!row.email && !!row.emailVerifiedAt,
+    role: row.role,
+  };
   next();
 }
 

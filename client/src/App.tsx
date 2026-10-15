@@ -21,6 +21,7 @@ import { Washers } from './pages/admin/Washers';
 import { Societies, SocietyDetailPage } from './pages/admin/Societies';
 import { WashLogs } from './pages/admin/WashLogs';
 import { Landing } from './pages/public/Landing';
+import { ForgotPassword } from './pages/public/ForgotPassword';
 import { Login } from './pages/public/Login';
 import { PlansPage } from './pages/public/PlansPage';
 import { Signup } from './pages/public/Signup';
@@ -65,6 +66,14 @@ export function App() {
           element={
             <GuestOnly>
               <Login />
+            </GuestOnly>
+          }
+        />
+        <Route
+          path="forgot-password"
+          element={
+            <GuestOnly>
+              <ForgotPassword />
             </GuestOnly>
           }
         />
