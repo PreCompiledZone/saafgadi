@@ -116,6 +116,7 @@ export async function createUser(
       email: input.email,
       passwordHash: await hashPassword(input.password),
       role,
+      createdByAdmin: role === 'USER',
     })
     .$returningId();
   if (role === 'ADMIN')

@@ -1,7 +1,7 @@
 // Societies: onboarding, customer choice, default washer, bulk assignment, filters.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type supertest from 'supertest';
-import { agent, dbAvailable, freshApp, morningIst, setNow } from './helpers';
+import { agent, dbAvailable, freshApp, morningIst, setNow, verifiedSignup } from './helpers';
 
 const up = await dbAvailable();
 
@@ -35,7 +35,7 @@ describe.runIf(up)('Societies', () => {
 
   async function signup(name: string, mobile: string, reg: string, addr: Record<string, unknown>) {
     const a = agent(app);
-    const res = await a.post('/api/auth/signup').send({
+    const res = await verifiedSignup(a, {
       name,
       mobile,
       email: `${mobile}@example.com`,

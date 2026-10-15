@@ -12,12 +12,14 @@ import type {
 import type { SessionUser } from '../../../shared/types';
 import { getDb, type DbOrTx } from '../../db';
 import { users } from '../../db/schema';
+import { getConfig } from '../../config';
 import { now } from '../../lib/clock';
 import { AppError, badRequest, conflict, notFound } from '../../lib/errors';
 import { hashPassword, verifyAgainstDummy, verifyPassword } from '../../lib/passwords';
 import { societyFields } from '../societies/societies.service';
 import { insertVehicle } from '../vehicles/vehicles.service';
 import { toSessionUser } from '../users/users.repo';
+import { isDisposableEmail } from './disposableDomains';
 import { consumeCode, issueCode, normaliseEmail } from './otp.service';
 
 /** What a route needs to sign the session cookie. */
@@ -56,6 +58,7 @@ export async function assertContactFree(
   }
 }
 
+/** Creates a customer whose email was verified first (see verifySignup). */
 export async function signup(input: z.output<typeof signupSchema>): Promise<SignedIn> {
   const regs = input.vehicles.map((v) => v.registrationNumber);
   if (new Set(regs).size !== regs.length) {
@@ -71,6 +74,7 @@ export async function signup(input: z.output<typeof signupSchema>): Promise<Sign
         name: input.name,
         mobile: input.mobile,
         email: input.email,
+        emailVerifiedAt: now(),
         passwordHash,
         role: 'USER',
         addressLine: input.addressLine,
@@ -147,6 +151,23 @@ export async function requestCode(
 ): Promise<void> {
   const db = getDb();
   const email = normaliseEmail(input.email);
+  if (input.purpose === 'SIGNUP') {
+    assertNotDisposable(email);
+    // Registered already: no code, just a "log in instead" email. Same response either way.
+    const [taken] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    await issueCode({
+      destination: email,
+      purpose: 'SIGNUP',
+      userId: null,
+      ip,
+      deliver: taken ? 'account-exists' : 'code',
+    });
+    return;
+  }
   if (input.purpose === 'VERIFY_EMAIL') {
     if (!sessionUserId) throw new AppError(401, 'UNAUTHORIZED', 'Please log in');
     const [u] = await db.select().from(users).where(eq(users.id, sessionUserId)).limit(1);
@@ -160,7 +181,7 @@ export async function requestCode(
       purpose: 'VERIFY_EMAIL',
       userId: u.id,
       ip,
-      deliver: true,
+      deliver: 'code',
     });
     return;
   }
@@ -171,7 +192,7 @@ export async function requestCode(
     purpose: 'RESET_PASSWORD',
     userId: known ? u.id : null,
     ip,
-    deliver: known,
+    deliver: known ? 'code' : 'none',
   });
 }
 
@@ -221,6 +242,7 @@ export async function changeEmail(
   const db = getDb();
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!u) throw notFound('User');
+  assertNotDisposable(input.email);
   await assertContactFree(db, u.mobile, input.email, userId);
   if (u.email !== input.email) {
     await db
@@ -230,4 +252,21 @@ export async function changeEmail(
   }
   const [fresh] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   return toSessionUser(fresh);
+}
+
+export function assertNotDisposable(email: string) {
+  if (getConfig().signup.blockDisposableEmails && isDisposableEmail(email)) {
+    throw badRequest(
+      'Please use your regular email, not a temporary one',
+      { fieldErrors: { email: ['Temporary email addresses aren’t allowed'] } },
+      'DISPOSABLE_EMAIL',
+    );
+  }
+}
+
+/** Checks a sign-up code. Returns the verified email; no account is created here. */
+export async function verifySignup(emailInput: string, code: string): Promise<string> {
+  const email = normaliseEmail(emailInput);
+  await consumeCode({ destination: email, purpose: 'SIGNUP', code });
+  return email;
 }

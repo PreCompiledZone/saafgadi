@@ -2,7 +2,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type supertest from 'supertest';
 import { failNextSend, testOutbox } from '../server/modules/notifications/notifications.service';
-import { agent, dbAvailable, freshApp, setNow } from './helpers';
+import { getConfig } from '../server/config';
+import { agent, dbAvailable, freshApp, setNow, verifiedSignup } from './helpers';
 
 const up = await dbAvailable();
 
@@ -22,11 +23,12 @@ describe.runIf(up)('Email OTP', () => {
   const email = 'meera@example.com';
   const logs: string[] = [];
 
+  /** Signs up, then switches to `mail`, which leaves that email unverified. */
   async function signup(a: Agent, mobile: string, mail: string) {
-    const res = await a.post('/api/auth/signup').send({
+    const res = await verifiedSignup(a, {
       name: 'Meera Joshi',
       mobile,
-      email: mail,
+      email: `signup.${mail}`,
       password: 'oldpass123',
       societyOrBuilding: 'Green Acres',
       flatOrHouseNo: 'C-12',
@@ -35,7 +37,9 @@ describe.runIf(up)('Email OTP', () => {
       pincode: '411014',
     });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
-    return res.body.user;
+    const changed = await a.put('/api/auth/email').send({ email: mail });
+    expect(changed.body.user).toMatchObject({ email: mail, emailVerified: false });
+    return changed.body.user;
   }
 
   beforeAll(async () => {
@@ -169,9 +173,9 @@ describe.runIf(up)('Email OTP', () => {
     expect(fourth.status).toBe(429); // 3 per email per hour
     expect(fourth.body.error.details.retryAfterSeconds).toBeGreaterThan(3000);
 
-    // Per IP: 10 an hour across any emails, in an hour of its own.
+    // Per IP: OTP_MAX_SENDS_PER_IP_PER_HOUR across any emails, in an hour of its own.
     setNow(hour(8));
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < getConfig().otp.maxSendsPerIpPerHour; i++) {
       expect((await send(a, `ip${i}@example.com`, 'RESET_PASSWORD')).status).toBe(200);
     }
     expect((await send(a, 'ip-last@example.com', 'RESET_PASSWORD')).status).toBe(429);

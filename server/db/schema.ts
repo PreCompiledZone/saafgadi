@@ -70,6 +70,8 @@ export const users = mysqlTable(
     city: varchar('city', { length: 80 }),
     pincode: varchar('pincode', { length: 6 }),
     lastLoginAt: datetime('last_login_at', { mode: 'date' }),
+    /** Customers added by an admin don't have to verify an email. */
+    createdByAdmin: boolean('created_by_admin').notNull().default(false),
     /** Bumped on password reset; sessions signed with an older version stop working. */
     tokenVersion: int('token_version').notNull().default(0),
     ...timestamps,
@@ -290,7 +292,7 @@ export const otpCodes = mysqlTable(
   {
     id: id(),
     channel: mysqlEnum('channel', OTP_CHANNELS).notNull(),
-    /** Email, lower-case and trimmed. */
+    /** Email, lower-case and trimmed. user_id is null for SIGNUP (no account yet). */
     destination: varchar('destination', { length: 255 }).notNull(),
     purpose: mysqlEnum('purpose', OTP_PURPOSES).notNull(),
     userId: ref('user_id').references(() => users.id),

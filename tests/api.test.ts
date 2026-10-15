@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type supertest from 'supertest';
 import { addDays } from '../server/lib/dates';
-import { agent, dbAvailable, freshApp, morningIst, setNow } from './helpers';
+import { agent, dbAvailable, freshApp, morningIst, setNow, verifiedSignup } from './helpers';
 
 const up = await dbAvailable();
 if (!up) console.warn('⚠ Test database not reachable — skipping API tests (see .env.test)');
@@ -157,7 +157,7 @@ describe.runIf(up)('SaafGadi API — acceptance walkthrough', () => {
     expect(noEmail.status).toBe(400);
     expect(noEmail.body.error.details.fieldErrors.email).toBeTruthy();
 
-    const res = await user.post('/api/auth/signup').send({
+    const res = await verifiedSignup(user, {
       name: 'Rohan Kulkarni',
       mobile: '98200 12345',
       email: 'Rohan@Example.com',
@@ -183,7 +183,8 @@ describe.runIf(up)('SaafGadi API — acceptance walkthrough', () => {
     expect(res.body.user).toMatchObject({
       role: 'USER',
       email: 'rohan@example.com',
-      emailVerified: false,
+      emailVerified: true,
+      mustVerifyEmail: false,
     });
     userId = res.body.user.id;
 
@@ -193,29 +194,27 @@ describe.runIf(up)('SaafGadi API — acceptance walkthrough', () => {
     vehicleId = vehicles.body[0].id;
 
     // Same number in another format is still a duplicate.
-    const dup = await agent(app)
-      .post('/api/auth/signup')
-      .send({
-        name: 'X',
-        mobile: '9820099999',
-        email: 'x@example.com',
-        password: 'xxxxxxxx',
-        societyOrBuilding: 'A',
-        flatOrHouseNo: '1',
-        area: 'A',
-        city: 'Pune',
-        pincode: '411001',
-        vehicles: [
-          {
-            category: 'CAR',
-            carType: 'SUV',
-            registrationNumber: 'MH14EH1234',
-            make: 'a',
-            model: 'b',
-            color: 'c',
-          },
-        ],
-      });
+    const dup = await verifiedSignup(agent(app), {
+      name: 'X',
+      mobile: '9820099999',
+      email: 'x@example.com',
+      password: 'xxxxxxxx',
+      societyOrBuilding: 'A',
+      flatOrHouseNo: '1',
+      area: 'A',
+      city: 'Pune',
+      pincode: '411001',
+      vehicles: [
+        {
+          category: 'CAR',
+          carType: 'SUV',
+          registrationNumber: 'MH14EH1234',
+          make: 'a',
+          model: 'b',
+          color: 'c',
+        },
+      ],
+    });
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('REGISTRATION_TAKEN');
   });

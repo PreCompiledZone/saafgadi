@@ -1,10 +1,14 @@
 import type { SessionUser, UserDto } from '../../../shared/types';
 import type { users } from '../../db/schema';
+import { mustVerifyEmail } from '../../middleware/auth';
 
 type UserRow = typeof users.$inferSelect;
 
 export function toSessionUser(
-  u: Pick<UserRow, 'id' | 'name' | 'mobile' | 'email' | 'emailVerifiedAt' | 'role'>,
+  u: Pick<
+    UserRow,
+    'id' | 'name' | 'mobile' | 'email' | 'emailVerifiedAt' | 'role' | 'createdByAdmin'
+  >,
 ): SessionUser {
   return {
     id: u.id,
@@ -12,6 +16,7 @@ export function toSessionUser(
     mobile: u.mobile,
     email: u.email,
     emailVerified: !!u.email && !!u.emailVerifiedAt,
+    mustVerifyEmail: mustVerifyEmail(u),
     role: u.role,
   };
 }

@@ -69,6 +69,9 @@ const envSchema = z.object({
   OTP_MAX_SENDS_PER_HOUR: z.coerce.number().int().min(1).max(100).default(3),
   OTP_MAX_SENDS_PER_IP_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(10),
 
+  SIGNUP_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
+  BLOCK_DISPOSABLE_EMAILS: bool.default('true'),
+
   RUN_MIGRATIONS_ON_START: bool.default('true'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
@@ -131,6 +134,10 @@ function buildConfig(env: z.infer<typeof envSchema>) {
       resendCooldownSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
       maxSendsPerHour: env.OTP_MAX_SENDS_PER_HOUR,
       maxSendsPerIpPerHour: env.OTP_MAX_SENDS_PER_IP_PER_HOUR,
+    },
+    signup: {
+      tokenTtlMinutes: env.SIGNUP_TOKEN_TTL_MINUTES,
+      blockDisposableEmails: env.BLOCK_DISPOSABLE_EMAILS,
     },
     runMigrationsOnStart: env.RUN_MIGRATIONS_ON_START,
     logLevel: env.LOG_LEVEL,

@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import { getConfig } from './config';
 import { pingDb } from './db';
 import { logger } from './lib/logger';
-import { loadUser, requireRole } from './middleware/auth';
+import { loadUser, requireRole, requireVerifiedEmail } from './middleware/auth';
 import { errorHandler, notFoundApi } from './middleware/error';
 import { authRouter } from './modules/auth/auth.routes';
 import { adminDashboardRouter, meDashboardRouter } from './modules/dashboard/dashboard.routes';
@@ -88,7 +88,9 @@ export function createApp() {
 
   const me = Router();
   me.use(requireRole('USER'));
+  // Profile stays open so an unverified customer can see and fix their details.
   me.use('/profile', meProfileRouter);
+  me.use(requireVerifiedEmail);
   me.use('/vehicles', meVehiclesRouter);
   me.use('/subscriptions', meSubscriptionsRouter);
   me.use('/wash-logs', meWashLogsRouter);

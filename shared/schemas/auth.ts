@@ -47,7 +47,10 @@ export function requireSociety(
 
 export const addressSchema = addressFields.superRefine(requireSociety);
 
-/** Self sign-up: email is required so it can be verified and used for password resets. */
+/** Self sign-up step 1: the email was already verified, so it isn't asked again. */
+export const signupDetailsSchema = personalSchema.omit({ email: true });
+
+/** Self sign-up: email is required and must match the verified sign-up token. */
 export const signupPersonalSchema = personalSchema.extend({ email: requiredEmail });
 
 export const signupSchema = signupPersonalSchema
@@ -85,6 +88,8 @@ export const otpSendSchema = z.object({
 });
 
 export const verifyEmailSchema = z.object({ code: otpCode });
+
+export const verifySignupSchema = z.object({ email: requiredEmail, code: otpCode });
 
 export const changeEmailSchema = z.object({ email: requiredEmail });
 

@@ -5,7 +5,7 @@ import type { Role } from '../../shared/enums';
 import { getConfig } from '../config';
 import { getDb } from '../db';
 import { users } from '../db/schema';
-import { forbidden, unauthorized } from '../lib/errors';
+import { AppError, forbidden, unauthorized } from '../lib/errors';
 
 export const AUTH_COOKIE = 'saafgadi_session';
 
@@ -15,6 +15,8 @@ export interface AuthUser {
   mobile: string;
   email: string | null;
   emailVerified: boolean;
+  /** A self-signed-up customer who must verify an email before using the app. */
+  mustVerifyEmail: boolean;
   role: Role;
 }
 
@@ -97,6 +99,7 @@ export async function loadUser(req: Request, res: Response, next: NextFunction) 
       role: users.role,
       isActive: users.isActive,
       tokenVersion: users.tokenVersion,
+      createdByAdmin: users.createdByAdmin,
     })
     .from(users)
     .where(eq(users.id, id))
@@ -112,9 +115,71 @@ export async function loadUser(req: Request, res: Response, next: NextFunction) 
     mobile: row.mobile,
     email: row.email,
     emailVerified: !!row.email && !!row.emailVerifiedAt,
+    mustVerifyEmail: mustVerifyEmail(row),
     role: row.role,
   };
   next();
+}
+
+/** Customers who signed up themselves need a verified email; staff and admin-added customers don't. */
+export function mustVerifyEmail(u: {
+  role: Role;
+  createdByAdmin: boolean;
+  email: string | null;
+  emailVerifiedAt: Date | null;
+}): boolean {
+  return u.role === 'USER' && !u.createdByAdmin && !(u.email && u.emailVerifiedAt);
+}
+
+/** Blocks customer routes until the email is verified (the client shows a verify screen). */
+export function requireVerifiedEmail(req: Request, _res: Response, next: NextFunction) {
+  if (req.user?.mustVerifyEmail) {
+    return next(new AppError(403, 'EMAIL_NOT_VERIFIED', 'Verify your email to continue'));
+  }
+  next();
+}
+
+// ------------------------------------------------------------ sign-up token
+
+/** Proof that an email was verified, held while the sign-up form is filled in. */
+export const SIGNUP_COOKIE = 'saafgadi_signup';
+
+export function setSignupCookie(res: Response, email: string): void {
+  const { jwtSecret, cookieSecure } = getConfig().auth;
+  const ttl = getConfig().signup.tokenTtlMinutes;
+  const token = jwt.sign({ purpose: 'signup', email }, jwtSecret, { expiresIn: ttl * 60 });
+  // A browser-session cookie: the token's own expiry is enforced on the server,
+  // so an expired one can be told apart from a missing one.
+  res.cookie(SIGNUP_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: cookieSecure,
+    path: '/api/auth',
+  });
+}
+
+export function clearSignupCookie(res: Response): void {
+  res.clearCookie(SIGNUP_COOKIE, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: getConfig().auth.cookieSecure,
+    path: '/api/auth',
+  });
+}
+
+/** The verified sign-up email, or why there isn't one. */
+export function readSignupToken(
+  req: Request,
+): { email: string } | { error: 'missing' | 'expired' } {
+  const token = req.cookies?.[SIGNUP_COOKIE];
+  if (!token) return { error: 'missing' };
+  try {
+    const p = jwt.verify(token, getConfig().auth.jwtSecret) as { purpose?: string; email?: string };
+    if (p.purpose !== 'signup' || !p.email) return { error: 'missing' };
+    return { email: p.email };
+  } catch (err) {
+    return { error: err instanceof jwt.TokenExpiredError ? 'expired' : 'missing' };
+  }
 }
 
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {

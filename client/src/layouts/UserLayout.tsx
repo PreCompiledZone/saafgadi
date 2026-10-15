@@ -5,6 +5,7 @@ import { Car, Clock, Home, List } from '../components/icons';
 import { initials } from '../lib/format';
 import { useSession } from '../lib/auth';
 import { BottomNav } from './BottomNav';
+import { VerifyEmailGate } from '../components/VerifyEmailGate';
 
 export function UserLayout() {
   const { user } = useSession();
@@ -25,7 +26,7 @@ export function UserLayout() {
         </Link>
       </header>
       <main className="mx-auto max-w-lg px-5 pb-32">
-        <Outlet />
+        {user?.mustVerifyEmail ? <VerifyEmailGate user={user} /> : <Outlet />}
       </main>
       <BottomNav
         items={[

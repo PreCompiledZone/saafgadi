@@ -8,7 +8,7 @@ import { getDb, type DbOrTx } from '../../db';
 import { otpCodes } from '../../db/schema';
 import { now } from '../../lib/clock';
 import { AppError } from '../../lib/errors';
-import { sendOtp } from '../notifications/notifications.service';
+import { sendAccountExistsNotice, sendOtp } from '../notifications/notifications.service';
 
 const HOUR_MS = 3_600_000;
 const KEEP_DAYS = 7;
@@ -86,16 +86,17 @@ async function assertSendAllowed(db: DbOrTx, destination: string, purpose: OtpPu
 }
 
 /**
- * Issues a code and sends it. With `deliver: false` (a reset for an email we
- * don't know) a dead row is still written, so limits and responses look the
- * same whether or not the email is registered.
+ * Issues a code and sends it. With `deliver: 'none'` (a reset for an email we
+ * don't know) or `'account-exists'` (sign-up with a registered email, which
+ * gets a "log in instead" email) no code is sent, but a dead row is still
+ * written so limits and responses look the same either way.
  */
 export async function issueCode(args: {
   destination: string;
   purpose: OtpPurpose;
   userId: number | null;
   ip: string;
-  deliver: boolean;
+  deliver: 'code' | 'none' | 'account-exists';
 }): Promise<void> {
   const db = getDb();
   const { otp } = getConfig();
@@ -129,7 +130,7 @@ export async function issueCode(args: {
         userId: args.userId,
         codeHash: hashCode(code, destination, args.purpose),
         expiresAt: new Date(t.getTime() + otp.ttlMinutes * 60_000),
-        consumedAt: args.deliver ? null : t,
+        consumedAt: args.deliver === 'code' ? null : t,
         requestIp: args.ip,
         createdAt: t,
       })
@@ -137,9 +138,10 @@ export async function issueCode(args: {
     return row.id;
   });
 
-  if (!args.deliver) return;
+  if (args.deliver === 'none') return;
   try {
-    await sendOtp({ channel: 'EMAIL', destination, code, purpose: args.purpose });
+    if (args.deliver === 'account-exists') await sendAccountExistsNotice(destination);
+    else await sendOtp({ channel: 'EMAIL', destination, code, purpose: args.purpose });
   } catch (err) {
     // Not delivered: don't let it count against the customer's limits.
     await db.delete(otpCodes).where(eq(otpCodes.id, id));

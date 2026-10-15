@@ -1,23 +1,24 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { addressSchema, signupPersonalSchema } from '@shared/schemas';
+import { addressSchema, requiredEmail, signupDetailsSchema } from '@shared/schemas';
 import type { SessionUser } from '@shared/types';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { api, ApiError } from '../../api/client';
-import { ChevronLeft, ChevronRight } from '../../components/icons';
-import { EmailVerify } from '../../components/EmailVerify';
-import { Button, Field, FormError, Input } from '../../components/ui';
+import { Check, ChevronLeft, ChevronRight } from '../../components/icons';
+import { CodeInput } from '../../components/CodeInput';
+import { retryAfter, SendError, useCountdown } from '../../components/EmailVerify';
+import { Button, Field, FormError, Input, Notice } from '../../components/ui';
 import { SocietyField } from '../../components/SocietyField';
 import { VehicleForm, type VehicleFormValues } from '../../components/VehicleForm';
 import { useAuthActions } from '../../lib/auth';
 import { applyServerErrors } from '../../lib/forms';
 
-type Personal = z.output<typeof signupPersonalSchema>;
+type Personal = z.output<typeof signupDetailsSchema>;
 type Address = z.output<typeof addressSchema>;
 
-const PROGRESS = ['33%', '60%', '82%'];
+const PROGRESS = ['12%', '33%', '60%', '82%'];
 
 function StepHeader({ step, onBack }: { step: number; onBack: () => void }) {
   return (
@@ -26,14 +27,11 @@ function StepHeader({ step, onBack }: { step: number; onBack: () => void }) {
         role="progressbar"
         aria-label="Sign-up progress"
         aria-valuenow={step}
-        aria-valuemin={1}
+        aria-valuemin={0}
         aria-valuemax={3}
         className="h-1 bg-line"
       >
-        <div
-          className="h-full bg-accent transition-[width]"
-          style={{ width: PROGRESS[step - 1] }}
-        />
+        <div className="h-full bg-accent transition-[width]" style={{ width: PROGRESS[step] }} />
       </div>
       <header className="mx-auto max-w-md flex items-center justify-between px-2 py-1.5">
         <button
@@ -44,7 +42,9 @@ function StepHeader({ step, onBack }: { step: number; onBack: () => void }) {
         >
           <ChevronLeft size={22} />
         </button>
-        <span className="text-sm text-muted pr-3.5">Step {step} of 3</span>
+        <span className="text-sm text-muted pr-3.5">
+          {step === 0 ? 'Verify your email' : `Step ${step} of 3`}
+        </span>
       </header>
     </>
   );
@@ -61,20 +61,26 @@ function Heading({ title, sub }: { title: string; sub: string }) {
 
 function PersonalStep({
   initial,
+  email,
   onNext,
+  onChangeEmail,
+  onHoneypot,
   serverError,
 }: {
   initial?: Personal;
+  email: string;
   onNext: (v: Personal) => void;
+  onChangeEmail: () => void;
+  onHoneypot: (v: string) => void;
   serverError?: ApiError;
 }) {
-  const form = useForm<z.input<typeof signupPersonalSchema>, unknown, Personal>({
-    resolver: zodResolver(signupPersonalSchema),
-    defaultValues: initial ?? { name: '', mobile: '', email: '', password: '' },
+  const form = useForm<z.input<typeof signupDetailsSchema>, unknown, Personal>({
+    resolver: zodResolver(signupDetailsSchema),
+    defaultValues: initial ?? { name: '', mobile: '', password: '' },
   });
   const { register, handleSubmit, formState, setError } = form;
   useEffect(() => {
-    if (serverError && !applyServerErrors(serverError, setError, ['mobile', 'email'])) {
+    if (serverError && !applyServerErrors(serverError, setError, ['mobile'])) {
       setError('root', { message: serverError.message });
     }
   }, [serverError, setError]);
@@ -106,21 +112,34 @@ function PersonalStep({
           invalid={!!e.mobile}
         />
       </Field>
-      <Field
-        label="Email"
-        htmlFor="email"
-        error={e.email?.message}
-        hint="We’ll send a code to verify it, and use it if you forget your password"
-      >
-        <Input
-          id="email"
-          type="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          {...register('email')}
-          invalid={!!e.email}
+      <div className="flex items-center gap-3 rounded-[14px] border border-line bg-white px-3.5 py-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-muted">Email</div>
+          <div className="font-semibold truncate">{email}</div>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft text-accent-deep text-xs font-semibold px-2.5 py-1">
+          <Check size={13} strokeWidth={3} /> Email verified
+        </span>
+        <button
+          type="button"
+          onClick={onChangeEmail}
+          className="text-sm font-semibold text-accent-ink p-1"
+        >
+          Change
+        </button>
+      </div>
+      {/* Honeypot: hidden from people, so only bots fill it. */}
+      <div aria-hidden="true" className="absolute -left-[9999px] w-px h-px overflow-hidden">
+        <label htmlFor="website">Website</label>
+        <input
+          id="website"
+          name="website"
+          type="text"
+          tabIndex={-1}
+          autoComplete="off"
+          onChange={(ev) => onHoneypot(ev.target.value)}
         />
-      </Field>
+      </div>
       <Field
         label="Password"
         htmlFor="password"
@@ -210,82 +229,216 @@ function AddressStep({ initial, onNext }: { initial?: Address; onNext: (v: Addre
   );
 }
 
-function ChangeEmail({
-  current,
-  onDone,
-  onCancel,
+const emailForm = z.object({ email: requiredEmail });
+
+/** Step 0: verify the email before anything else. No account exists yet. */
+function EmailStep({
+  initial,
+  notice,
+  onVerified,
 }: {
-  current: string;
-  onDone: (user: SessionUser) => void;
-  onCancel: () => void;
+  initial?: string;
+  notice?: string;
+  onVerified: (email: string) => void;
 }) {
-  const [email, setEmail] = useState(current);
-  const [error, setError] = useState<Error | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [email, setEmail] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [left, setLeft] = useCountdown();
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<unknown>(null);
+  const [verifyError, setVerifyError] = useState<unknown>(null);
+  const [verifying, setVerifying] = useState(false);
+  const form = useForm<z.input<typeof emailForm>, unknown, z.output<typeof emailForm>>({
+    resolver: zodResolver(emailForm),
+    defaultValues: { email: initial ?? '' },
+  });
+
+  async function send(to: string) {
+    setSending(true);
+    setSendError(null);
+    try {
+      await api.post('/auth/otp/send', { email: to, purpose: 'SIGNUP' });
+      setEmail(to);
+      setCode('');
+      setLeft(60);
+    } catch (err) {
+      const wait = retryAfter(err);
+      if (wait) {
+        setLeft(wait);
+        setEmail(to); // a recent code is still valid
+      } else if (err instanceof ApiError && err.code === 'DISPOSABLE_EMAIL') {
+        form.setError('email', { message: err.message });
+        return;
+      }
+      setSendError(err);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function verify(value: string) {
+    if (!email || value.length !== 6) return;
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      const res = await api.post<{ email: string }>('/auth/otp/verify-signup', {
+        email,
+        code: value,
+      });
+      onVerified(res.email);
+    } catch (err) {
+      setVerifyError(err);
+      setCode('');
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  if (!email) {
+    return (
+      <form
+        noValidate
+        className="flex flex-col gap-5 pt-6"
+        onSubmit={form.handleSubmit((v) => send(v.email))}
+      >
+        {notice ? <Notice tone="warn">{notice}</Notice> : null}
+        <Field
+          label="Email"
+          htmlFor="email"
+          error={form.formState.errors.email?.message}
+          hint="We’ll send you a code to check it’s yours"
+        >
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            autoFocus
+            {...form.register('email')}
+            invalid={!!form.formState.errors.email}
+          />
+        </Field>
+        <SendError error={sendError} />
+        <Button type="submit" variant="cta" size="lg" block loading={sending} disabled={left > 0}>
+          {left > 0 ? `Send code in ${left}s` : 'Send code'}{' '}
+          <ChevronRight size={18} strokeWidth={2.2} />
+        </Button>
+        <p className="text-center text-[15px] text-muted">
+          Already have an account?{' '}
+          <Link to="/login" className="font-semibold">
+            Log in
+          </Link>
+        </p>
+      </form>
+    );
+  }
+
   return (
-    <form
-      noValidate
-      className="flex flex-col gap-4"
-      onSubmit={async (ev) => {
-        ev.preventDefault();
-        setSaving(true);
-        setError(null);
-        try {
-          const { user } = await api.put<{ user: SessionUser }>('/auth/email', { email });
-          onDone(user);
-        } catch (err) {
-          setError(err as Error);
-        } finally {
-          setSaving(false);
-        }
-      }}
-    >
-      <Field label="Email" htmlFor="new-email">
-        <Input
-          id="new-email"
-          type="email"
-          autoComplete="email"
-          value={email}
-          onChange={(ev) => setEmail(ev.target.value)}
-        />
-      </Field>
-      <FormError error={error} />
-      <Button type="submit" variant="cta" size="lg" block loading={saving}>
-        Save and send code
+    <div className="flex flex-col gap-5 pt-6">
+      <p className="text-[15px] text-muted">
+        We sent a 6-digit code to <b className="text-ink">{email}</b>. It’s valid for 10 minutes.
+      </p>
+      <CodeInput
+        value={code}
+        invalid={!!verifyError}
+        autoFocus
+        onChange={(v) => {
+          setCode(v);
+          setVerifyError(null);
+          if (v.length === 6) void verify(v);
+        }}
+      />
+      <FormError error={verifyError as Error | null} />
+      <Button
+        variant="cta"
+        size="lg"
+        block
+        loading={verifying}
+        disabled={code.length !== 6}
+        onClick={() => verify(code)}
+      >
+        Verify and continue <ChevronRight size={18} strokeWidth={2.2} />
       </Button>
-      <Button variant="ghost" onClick={onCancel}>
-        Cancel
-      </Button>
-    </form>
+      <SendError error={sendError} />
+      <div className="flex flex-col items-center gap-1">
+        <button
+          type="button"
+          className="p-2 text-[15px] font-semibold text-accent-ink disabled:text-muted"
+          disabled={left > 0 || sending}
+          onClick={() => send(email)}
+        >
+          {left > 0 ? `Resend code in ${left}s` : 'Resend code'}
+        </button>
+        <button
+          type="button"
+          className="p-2 text-sm text-muted"
+          onClick={() => {
+            setEmail(null);
+            setSendError(null);
+            setVerifyError(null);
+          }}
+        >
+          Wrong email? Change it
+        </button>
+        <p className="text-[13px] text-muted">Didn’t get it? Check spam.</p>
+      </div>
+    </div>
   );
 }
 
 export function Signup() {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0);
+  const [email, setEmail] = useState<string>();
+  const [expired, setExpired] = useState<string>();
+  const [website, setWebsite] = useState('');
   const [personal, setPersonal] = useState<Personal>();
   const [address, setAddress] = useState<Address>();
   const [vehicle, setVehicle] = useState<VehicleFormValues>();
   const [personalError, setPersonalError] = useState<ApiError>();
   const [skipError, setSkipError] = useState<string>();
   const [skipping, setSkipping] = useState(false);
-  const [created, setCreated] = useState<{ user: SessionUser; registration?: string }>();
-  const [changing, setChanging] = useState(false);
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { signedIn } = useAuthActions();
 
   async function create(v: VehicleFormValues | null) {
     try {
-      const { user } = await api.post<{ user: SessionUser }>('/auth/signup', {
+      const res = await api.post<{ user?: SessionUser }>('/auth/signup', {
         ...personal,
+        email,
+        website,
         ...address,
         vehicles: v ? [v] : [],
       });
-      // The session cookie is set; sign in on this page only after the email
-      // step, since signed-in users are sent away from /signup.
-      setCreated({ user, registration: v?.registrationNumber });
+      if (!res.user) {
+        navigate('/', { replace: true });
+        return;
+      }
+      await signedIn(res.user);
+      const plan = params.get('plan');
+      navigate(`/app/welcome${plan ? `?plan=${plan}` : ''}`, {
+        replace: true,
+        state: { registration: v?.registrationNumber },
+      });
     } catch (err) {
-      if (err instanceof ApiError && ['MOBILE_TAKEN', 'EMAIL_TAKEN'].includes(err.code)) {
+      if (
+        err instanceof ApiError &&
+        [
+          'SIGNUP_TOKEN_EXPIRED',
+          'SIGNUP_TOKEN_REQUIRED',
+          'SIGNUP_EMAIL_MISMATCH',
+          'EMAIL_TAKEN',
+        ].includes(err.code)
+      ) {
+        // Back to step 0; everything typed so far is kept.
+        setExpired(
+          err.code === 'EMAIL_TAKEN'
+            ? 'This email already has an account. Log in, or use a different email.'
+            : 'Your verification expired, please verify your email again.',
+        );
+        setStep(0);
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'MOBILE_TAKEN') {
         setPersonalError(err);
         setStep(1);
         return;
@@ -294,79 +447,40 @@ export function Signup() {
     }
   }
 
-  const back = () => (step === 1 ? navigate(-1) : setStep(step - 1));
-
-  async function finish(user: SessionUser) {
-    await signedIn(user);
-    const plan = params.get('plan');
-    navigate(`/app/welcome${plan ? `?plan=${plan}` : ''}`, {
-      replace: true,
-      state: { registration: created?.registration },
-    });
-  }
-
-  if (created) {
-    return (
-      <div className="pb-10">
-        <div className="h-1 bg-accent" />
-        <div className="mx-auto max-w-md px-5 pt-8 flex flex-col gap-6">
-          <Heading
-            title="Check your email"
-            sub="Enter the code we sent to verify your email. It’s valid for 10 minutes."
-          />
-          {changing ? (
-            <ChangeEmail
-              current={created.user.email ?? ''}
-              onDone={(user) => {
-                setCreated({ ...created, user });
-                setChanging(false);
-              }}
-              onCancel={() => setChanging(false)}
-            />
-          ) : (
-            <>
-              <EmailVerify
-                key={created.user.email}
-                email={created.user.email ?? ''}
-                autoSend
-                onVerified={finish}
-              />
-              <div className="flex flex-col items-center gap-1">
-                <button
-                  type="button"
-                  className="p-2 text-[15px] font-semibold text-accent-ink"
-                  onClick={() => setChanging(true)}
-                >
-                  Wrong email? Change it
-                </button>
-                <button
-                  type="button"
-                  className="p-2 text-sm text-muted"
-                  onClick={() => finish(created.user)}
-                >
-                  Skip for now
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const back = () => (step <= 1 ? navigate(-1) : setStep(step - 1));
 
   return (
     <div className="pb-10">
       <StepHeader step={step} onBack={back} />
       <div className="mx-auto max-w-md px-5">
-        {step === 1 ? (
+        {step === 0 ? (
           <>
             <Heading
               title="Create your account"
+              sub="First, your email. We’ll use it if you ever forget your password."
+            />
+            <EmailStep
+              initial={email}
+              notice={expired}
+              onVerified={(verified) => {
+                setEmail(verified);
+                setExpired(undefined);
+                setStep(1);
+              }}
+            />
+          </>
+        ) : step === 1 ? (
+          <>
+            <Heading
+              title="Your details"
               sub="It takes a minute. We’ll use these to reach you about your washes."
             />
             <PersonalStep
               initial={personal}
+              email={email ?? ''}
               serverError={personalError}
+              onHoneypot={setWebsite}
+              onChangeEmail={() => setStep(0)}
               onNext={(v) => {
                 setPersonal(v);
                 setStep(2);

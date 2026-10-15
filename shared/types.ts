@@ -31,6 +31,8 @@ export interface SessionUser {
   email: string | null;
   /** The email has been confirmed with a code sent to it. */
   emailVerified: boolean;
+  /** Customer must verify an email before using the app. */
+  mustVerifyEmail: boolean;
   role: Role;
 }
 

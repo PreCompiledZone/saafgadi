@@ -67,3 +67,20 @@ export function setNow(iso: string) {
 
 /** 08:30 IST on the given business date. */
 export const morningIst = (date: string) => `${date}T03:00:00Z`;
+
+/** Sign-up the way the app does it: email code → verify → submit the form. */
+export async function verifiedSignup(
+  a: ReturnType<typeof supertest.agent>,
+  body: Record<string, unknown> & { email: string },
+) {
+  const { testOutbox } = await import('../server/modules/notifications/notifications.service');
+  const email = body.email.trim().toLowerCase();
+  const sent = await a.post('/api/auth/otp/send').send({ email, purpose: 'SIGNUP' });
+  if (sent.status !== 200) throw new Error(`SIGNUP send failed: ${JSON.stringify(sent.body)}`);
+  const code = [...testOutbox]
+    .reverse()
+    .find((m) => m.destination === email && m.purpose === 'SIGNUP')?.code;
+  const ok = await a.post('/api/auth/otp/verify-signup').send({ email, code });
+  if (ok.status !== 200) throw new Error(`SIGNUP verify failed: ${JSON.stringify(ok.body)}`);
+  return a.post('/api/auth/signup').send(body);
+}

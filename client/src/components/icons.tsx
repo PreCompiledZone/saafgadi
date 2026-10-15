@@ -29,6 +29,12 @@ export const Plus = make(<path d="M12 5v14M5 12h14" />);
 export const ChevronLeft = make(<path d="M15 18l-6-6 6-6" />);
 export const ChevronRight = make(<path d="M9 6l6 6-6 6" />);
 export const ChevronDown = make(<path d="M6 9l6 6 6-6" />);
+export const Mail = make(
+  <>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="m3 7 9 6 9-6" />
+  </>,
+);
 export const Check = make(<path d="M20 6 9 17l-5-5" />);
 export const CheckCircle = make(
   <>

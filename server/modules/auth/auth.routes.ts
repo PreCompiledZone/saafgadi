@@ -8,16 +8,21 @@ import {
   passwordResetSchema,
   signupSchema,
   verifyEmailSchema,
+  verifySignupSchema,
 } from '../../../shared/schemas';
 import { getConfig } from '../../config';
 import { currentUser, parse } from '../../lib/http';
 import {
   clearAuthCookie,
+  clearSignupCookie,
+  readSignupToken,
   requireAuth,
   requireRole,
   setAuthCookie,
+  setSignupCookie,
   signToken,
 } from '../../middleware/auth';
+import { AppError } from '../../lib/errors';
 import {
   changeEmail,
   changePassword,
@@ -26,6 +31,7 @@ import {
   resetPassword,
   signup,
   verifyEmail,
+  verifySignup,
 } from './auth.service';
 
 export const authRouter = Router();
@@ -45,9 +51,42 @@ const limiter = rateLimit({
 });
 
 authRouter.post('/signup', limiter, async (req, res) => {
-  const { user, tokenVersion } = await signup(parse(signupSchema, req.body));
+  // Honeypot: people never see the `website` field, so only bots fill it.
+  const website = (req.body as { website?: unknown } | undefined)?.website;
+  if (typeof website === 'string' && website.trim()) {
+    res.json({ ok: true });
+    return;
+  }
+  const input = parse(signupSchema, req.body);
+  const token = readSignupToken(req);
+  if ('error' in token) {
+    throw token.error === 'expired'
+      ? new AppError(
+          401,
+          'SIGNUP_TOKEN_EXPIRED',
+          'Your verification expired, please verify your email again',
+        )
+      : new AppError(401, 'SIGNUP_TOKEN_REQUIRED', 'Verify your email first');
+  }
+  if (token.email !== input.email) {
+    throw new AppError(
+      403,
+      'SIGNUP_EMAIL_MISMATCH',
+      'This isn’t the email you verified. Please verify it again.',
+    );
+  }
+  const { user, tokenVersion } = await signup(input);
+  clearSignupCookie(res);
   setAuthCookie(res, signToken({ ...user, tokenVersion }));
   res.status(201).json({ user });
+});
+
+// Sign-up starts here: the email is verified before any account exists.
+authRouter.post('/otp/verify-signup', limiter, async (req, res) => {
+  const { email, code } = parse(verifySignupSchema, req.body);
+  const verified = await verifySignup(email, code);
+  setSignupCookie(res, verified);
+  res.json({ ok: true, email: verified });
 });
 
 authRouter.post('/login', limiter, async (req, res) => {

@@ -1,0 +1,2 @@
+ALTER TABLE `otp_codes` MODIFY COLUMN `purpose` enum('SIGNUP','VERIFY_EMAIL','RESET_PASSWORD') NOT NULL;--> statement-breakpoint
+ALTER TABLE `users` ADD `created_by_admin` boolean DEFAULT false NOT NULL;
