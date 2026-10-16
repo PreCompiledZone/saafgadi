@@ -1,8 +1,8 @@
 import { useContact, usePublicPlans } from '../../api/hooks';
 import { useAppName } from '../../components/brand';
-import { AccountButton, Logo } from '../../components/brand';
+import { Logo, PublicHeaderActions } from '../../components/brand';
 import { LogoMark, splitWordmark } from '../../components/LogoMark';
-import { ContactButtons } from '../../components/contact';
+import { FooterContact } from '../../components/contact';
 import { Check, ChevronRight, Interior, Wash } from '../../components/icons';
 import { PlanCard } from '../../components/PlanCard';
 import { Dot, LinkButton, Spinner, TimelineItem } from '../../components/ui';
@@ -69,7 +69,7 @@ export function Landing() {
     <div className="mx-auto max-w-5xl flex flex-col min-h-dvh">
       <header className="flex items-center justify-between px-5 py-[18px]">
         <Logo size="lg" />
-        <AccountButton />
+        <PublicHeaderActions />
       </header>
 
       <div className="md:grid md:grid-cols-2 md:gap-10 md:items-center md:px-6 md:py-8">
@@ -87,7 +87,7 @@ export function Landing() {
           <div className="md:hidden px-8 pt-6 pb-2">
             <PreviewCard />
           </div>
-          <section className="px-5 pt-6 pb-2 flex flex-col gap-2.5 md:max-w-md">
+          <section className="px-5 pt-6 pb-2 flex flex-col md:max-w-md">
             <LinkButton
               to={user ? HOME_FOR[user.role] : '/signup'}
               variant="cta"
@@ -97,7 +97,6 @@ export function Landing() {
               {user ? 'Go to my dashboard' : 'Get started'}{' '}
               <ChevronRight size={18} strokeWidth={2.2} />
             </LinkButton>
-            <ContactButtons />
           </section>
         </div>
         <div className="hidden md:block">
@@ -173,6 +172,9 @@ export function Landing() {
             {[contact?.businessAddress, contact?.supportHours].filter(Boolean).join(' · ')}
           </span>
         ) : null}
+        <div className="mt-3">
+          <FooterContact />
+        </div>
       </footer>
     </div>
   );

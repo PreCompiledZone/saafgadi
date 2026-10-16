@@ -28,7 +28,8 @@ import {
   TimelineItem,
   useToast,
 } from '../../components/ui';
-import { bookingMessage, greeting, telTo, whatsappLink, whatsappTo } from '../../lib/contact';
+import { callLink, customerHelpMessage, telTo, whatsappLink, whatsappTo } from '../../lib/contact';
+import { ContactButtons } from '../../components/contact';
 import {
   firstName,
   fullDate,
@@ -139,8 +140,6 @@ function nextWashText(p: ActivityProgress, today: string): string | null {
 }
 
 function VehicleSummary({ v, today }: { v: UserVehicleSummary; today: string }) {
-  const contact = useContact().data;
-  const { user } = useSession();
   const s = v.subscription;
   const current = s && (v.displayStatus === 'ACTIVE' || v.displayStatus === 'EXPIRING') ? s : null;
   const rhythm = v.progress.find((p) => p.minGapDays >= 2) ?? v.progress[0];
@@ -150,17 +149,6 @@ function VehicleSummary({ v, today }: { v: UserVehicleSummary; today: string }) 
     LABELS.vehicleType[v.vehicle.vehicleType],
     v.vehicle.color,
   ].join(' · ');
-  const wa = whatsappLink(
-    contact,
-    bookingMessage({
-      contact,
-      intro: `${greeting(contact)}, I have a question about my plan.`,
-      name: user?.name,
-      mobile: user?.mobile,
-      registration: v.vehicle.registrationNumber,
-      plan: s?.planName,
-    }),
-  );
 
   return (
     <>
@@ -264,19 +252,24 @@ function VehicleSummary({ v, today }: { v: UserVehicleSummary; today: string }) 
       ) : null}
 
       {current ? (
-        <div className="grid grid-cols-2 gap-2.5">
-          <LinkButton to={`/app/plans?vehicle=${v.vehicle.id}&change=1`}>Change plan</LinkButton>
-          {wa ? (
-            <AnchorButton href={wa} target="_blank" rel="noopener noreferrer" variant="cta">
-              <WhatsApp size={18} />
-              WhatsApp us
-            </AnchorButton>
-          ) : (
-            <LinkButton to="/app/enquiries">Ask us</LinkButton>
-          )}
-        </div>
+        <LinkButton to={`/app/plans?vehicle=${v.vehicle.id}&change=1`}>Change plan</LinkButton>
       ) : null}
     </>
+  );
+}
+
+/** WhatsApp and Call us, always visible to customers. */
+function HelpCard({ registration }: { registration?: string }) {
+  const contact = useContact().data;
+  if (!whatsappLink(contact) && !callLink(contact)) return null;
+  return (
+    <Card className="rounded-[20px] flex flex-col gap-3">
+      <h2 className="text-[17px] font-semibold">Need help?</h2>
+      <ContactButtons
+        message={customerHelpMessage(contact, registration)}
+        labels={{ whatsapp: 'WhatsApp us', call: 'Call us' }}
+      />
+    </Card>
   );
 }
 
@@ -372,6 +365,13 @@ export function Dashboard() {
                 </EmptyState>
               </Card>
             )}
+            <HelpCard
+              registration={
+                d.vehicles.find(
+                  (x) => x.displayStatus === 'ACTIVE' || x.displayStatus === 'EXPIRING',
+                )?.vehicle.registrationNumber
+              }
+            />
           </div>
         );
       }}

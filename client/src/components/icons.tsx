@@ -137,4 +137,10 @@ export const Alert = make(
 );
 export const Edit = make(<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />);
 export const Rupee = make(<path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3a5 5 0 0 0 0-10" />);
+export const HelpCircle = make(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.2a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.3-2.5 3.9M12 17h.01" />
+  </>,
+);
 export const Sparkles = Interior;

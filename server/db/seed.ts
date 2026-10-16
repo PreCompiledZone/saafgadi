@@ -122,6 +122,7 @@ async function seedSettings() {
     support_hours: '',
     whatsapp_default_message: `Hi ${appName}, I'd like to know more about your wash plans.`,
     show_washer_contact: 'true',
+    support_email: '',
   };
   const existing = new Set(
     (await db.select({ key: settings.key }).from(settings)).map((r) => r.key),

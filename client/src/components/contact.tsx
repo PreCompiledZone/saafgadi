@@ -1,6 +1,6 @@
 import { useContact } from '../api/hooks';
-import { callLink, whatsappLink } from '../lib/contact';
-import { Phone, WhatsApp } from './icons';
+import { callLink, displayPhone, visitorHelpMessage, whatsappLink } from '../lib/contact';
+import { Mail, Phone, WhatsApp } from './icons';
 import { AnchorButton, cx } from './ui';
 
 /** WhatsApp + Call buttons; each is hidden when its number isn't set. */
@@ -49,5 +49,42 @@ export function ContactButtons({
         </AnchorButton>
       ) : null}
     </div>
+  );
+}
+
+/** Footer "Contact" block: WhatsApp, Call and email as small text links. */
+export function FooterContact() {
+  const contact = useContact().data;
+  const wa = whatsappLink(contact, visitorHelpMessage(contact));
+  const tel = callLink(contact);
+  const email = contact?.supportEmail;
+  if (!wa && !tel && !email) return null;
+  const link = 'inline-flex items-center gap-1.5 text-muted no-underline hover:text-ink py-1';
+  return (
+    <section aria-labelledby="footer-contact" className="flex flex-col items-center gap-1">
+      <h2 id="footer-contact" className="text-xs font-semibold uppercase tracking-[1.2px]">
+        Contact
+      </h2>
+      <div className="flex flex-wrap justify-center gap-x-4">
+        {wa ? (
+          <a href={wa} target="_blank" rel="noopener noreferrer" className={link}>
+            <WhatsApp size={16} />
+            {displayPhone(contact!.whatsappNumber)}
+          </a>
+        ) : null}
+        {tel ? (
+          <a href={tel} className={link}>
+            <Phone size={16} />
+            {displayPhone(contact!.callNumber)}
+          </a>
+        ) : null}
+        {email ? (
+          <a href={`mailto:${email}`} className={link}>
+            <Mail size={16} />
+            {email}
+          </a>
+        ) : null}
+      </div>
+    </section>
   );
 }

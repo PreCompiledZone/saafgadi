@@ -55,5 +55,6 @@ export async function getContactInfo(): Promise<ContactInfo> {
     whatsappNumber: toInternational(s.whatsapp_number),
     callNumber: toInternational(s.call_number),
     whatsappDefaultMessage: s.whatsapp_default_message,
+    supportEmail: s.support_email,
   };
 }

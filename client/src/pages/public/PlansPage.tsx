@@ -1,6 +1,6 @@
 import { usePublicPlans } from '../../api/hooks';
-import { AccountButton, Logo } from '../../components/brand';
-import { ContactButtons } from '../../components/contact';
+import { Logo, PublicHeaderActions } from '../../components/brand';
+import { FooterContact } from '../../components/contact';
 import { PlanCard } from '../../components/PlanCard';
 import { LinkButton, QueryView } from '../../components/ui';
 import { useSession } from '../../lib/auth';
@@ -12,7 +12,7 @@ export function PlansPage() {
     <div className="mx-auto max-w-3xl px-5 pb-12">
       <header className="flex items-center justify-between py-[18px]">
         <Logo size="lg" />
-        <AccountButton />
+        <PublicHeaderActions />
       </header>
       <h1 className="text-[27px] font-bold tracking-[-0.5px] mt-2 mb-4">Plans</h1>
       <QueryView query={plans}>
@@ -36,9 +36,9 @@ export function PlansPage() {
           </div>
         )}
       </QueryView>
-      <div className="mt-6">
-        <ContactButtons />
-      </div>
+      <footer className="mt-10 text-sm">
+        <FooterContact />
+      </footer>
     </div>
   );
 }

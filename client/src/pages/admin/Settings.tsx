@@ -52,7 +52,7 @@ function SettingsForm({ initial }: { initial: Out }) {
     >
       <Card className="flex flex-col gap-4">
         <CardHeader
-          title="Contact numbers"
+          title="Contact details"
           sub="Customers see WhatsApp and Call buttons only for numbers you set here."
         />
         <Field
@@ -93,6 +93,20 @@ function SettingsForm({ initial }: { initial: Out }) {
           hint="Prefilled when a customer taps WhatsApp"
         >
           <Textarea id="msg" {...register('whatsapp_default_message')} />
+        </Field>
+        <Field
+          label="Contact email"
+          htmlFor="semail"
+          error={e.support_email?.message}
+          hint="Shown in the website footer"
+        >
+          <Input
+            id="semail"
+            type="email"
+            placeholder="hello@saafgadi.in"
+            {...register('support_email')}
+            invalid={!!e.support_email}
+          />
         </Field>
       </Card>
       <Card className="flex flex-col gap-4">

@@ -6,7 +6,7 @@ export default defineConfig({
     alias: { '@shared': path.resolve(__dirname, 'shared') },
   },
   test: {
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.{ts,tsx}'],
     environment: 'node',
     // API tests share one database, so run files one after another.
     fileParallelism: false,

@@ -58,6 +58,7 @@ export const SETTING_KEYS = [
   'support_hours',
   'whatsapp_default_message',
   'show_washer_contact',
+  'support_email',
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 

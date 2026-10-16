@@ -51,3 +51,25 @@ export function bookingMessage(args: {
 export function greeting(contact: ContactInfo | undefined): string {
   return contact?.businessName ? `Hi ${contact.businessName}` : 'Hi';
 }
+
+/** `+91 98765 43210` for showing a stored international number. */
+export function displayPhone(intl: string): string {
+  if (intl.length === 12 && intl.startsWith('91')) {
+    return `+91 ${intl.slice(2, 7)} ${intl.slice(7)}`;
+  }
+  return `+${intl}`;
+}
+
+/** WhatsApp text from public pages, before the visitor has an account. */
+export function visitorHelpMessage(contact: ContactInfo | undefined): string {
+  return `${greeting(contact)}, I have a question before signing up.`;
+}
+
+/** WhatsApp text from the customer dashboard. */
+export function customerHelpMessage(
+  contact: ContactInfo | undefined,
+  registration?: string,
+): string {
+  const who = registration ? `a customer (vehicle ${registration})` : 'a customer';
+  return `${greeting(contact)}, I'm ${who} and need help.`;
+}

@@ -16,6 +16,17 @@ export const settingsSchema = z.object({
   business_address: optionalText(255).transform((v) => v ?? ''),
   support_hours: optionalText(120).transform((v) => v ?? ''),
   whatsapp_default_message: optionalText(500).transform((v) => v ?? ''),
+  /** Shown in the public footer. */
+  support_email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .nullish()
+    .transform((v) => v ?? '')
+    .refine(
+      (v) => v === '' || z.string().email().max(190).safeParse(v).success,
+      'Enter a valid email',
+    ),
   /** Stored as 'true' / 'false'. */
   show_washer_contact: z
     .union([z.boolean(), z.enum(['true', 'false'])])

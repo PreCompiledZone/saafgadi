@@ -58,6 +58,7 @@ export interface ContactInfo {
   whatsappNumber: string;
   callNumber: string;
   whatsappDefaultMessage: string;
+  supportEmail: string;
 }
 
 export interface PlanActivityDto {

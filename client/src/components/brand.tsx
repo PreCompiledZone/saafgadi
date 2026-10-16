@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useContact } from '../api/hooks';
 import { HOME_FOR, useSession } from '../lib/auth';
 import { initials } from '../lib/format';
+import { HelpMenu } from './HelpMenu';
 import { User } from './icons';
 import { LogoMark, splitWordmark, type LogoVariant } from './LogoMark';
 
@@ -64,5 +65,15 @@ export function AccountButton() {
       <User size={18} strokeWidth={2.2} />
       Log in
     </Link>
+  );
+}
+
+/** Top-right of public pages: Help menu + Log in. The Help popover is positioned against this. */
+export function PublicHeaderActions() {
+  return (
+    <div className="relative flex items-center gap-2">
+      <HelpMenu />
+      <AccountButton />
+    </div>
   );
 }
