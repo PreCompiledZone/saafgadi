@@ -70,7 +70,9 @@ function EmailForm({
 export function VerifyEmailGate({ user }: { user: SessionUser }) {
   const { signedIn, logout } = useAuthActions();
   const navigate = useNavigate();
-  const [editing, setEditing] = useState(!user.email);
+  const [changing, setChanging] = useState(false);
+  // No email yet: always ask for one, whatever happened before.
+  const editing = changing || !user.email;
 
   return (
     <div className="pt-6 flex flex-col gap-5">
@@ -89,16 +91,16 @@ export function VerifyEmailGate({ user }: { user: SessionUser }) {
         {editing ? (
           <EmailForm
             initial={user.email ?? ''}
-            onCancel={user.email ? () => setEditing(false) : undefined}
+            onCancel={user.email ? () => setChanging(false) : undefined}
             onSaved={async (u) => {
               await signedIn(u);
-              setEditing(false);
+              setChanging(false);
             }}
           />
         ) : (
           <EmailVerify
             key={user.email}
-            email={user.email ?? ''}
+            email={user.email!}
             autoSend
             onVerified={(u) => signedIn(u)}
           />
@@ -108,7 +110,7 @@ export function VerifyEmailGate({ user }: { user: SessionUser }) {
         <button
           type="button"
           className="self-center p-2 text-[15px] font-semibold text-accent-ink"
-          onClick={() => setEditing(true)}
+          onClick={() => setChanging(true)}
         >
           Wrong email? Change it
         </button>

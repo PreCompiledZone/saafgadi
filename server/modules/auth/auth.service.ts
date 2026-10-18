@@ -198,13 +198,18 @@ export async function requestCode(
 
 export async function verifyEmail(userId: number, code: string): Promise<SessionUser> {
   const db = getDb();
-  const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  if (!u) throw notFound('User');
-  if (!u.email) throw badRequest('Add an email to your account first');
-  await consumeCode({ destination: u.email, purpose: 'VERIFY_EMAIL', code });
-  await db.update(users).set({ emailVerifiedAt: now() }).where(eq(users.id, userId));
-  const [fresh] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  return toSessionUser(fresh);
+  // Locking the user makes repeat submits of one code (double tap, autofill) wait their
+  // turn; the later ones then find the email verified and get the same answer.
+  return db.transaction(async (tx) => {
+    const [u] = await tx.select().from(users).where(eq(users.id, userId)).limit(1).for('update');
+    if (!u) throw notFound('User');
+    if (!u.email) throw badRequest('Add an email to your account first');
+    if (u.emailVerifiedAt) return toSessionUser(u);
+    await consumeCode({ destination: u.email, purpose: 'VERIFY_EMAIL', code });
+    const verifiedAt = now();
+    await tx.update(users).set({ emailVerifiedAt: verifiedAt }).where(eq(users.id, userId));
+    return toSessionUser({ ...u, emailVerifiedAt: verifiedAt });
+  });
 }
 
 /** Sets a new password and signs the account out everywhere. */

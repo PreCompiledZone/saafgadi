@@ -26,7 +26,7 @@ export function UserLayout() {
         </Link>
       </header>
       <main className="mx-auto max-w-lg px-5 pb-32">
-        {user?.mustVerifyEmail ? <VerifyEmailGate user={user} /> : <Outlet />}
+        {user?.mustVerifyEmail ? <VerifyEmailGate key={user.id} user={user} /> : <Outlet />}
       </main>
       <BottomNav
         items={[

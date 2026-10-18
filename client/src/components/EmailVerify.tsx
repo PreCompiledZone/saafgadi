@@ -88,8 +88,11 @@ export function EmailVerify({
     }
   }, [autoSend, send]);
 
+  // One check at a time: the last digit, a paste or autofill and the button can all fire.
+  const inFlight = useRef(false);
   async function verify(value = code) {
-    if (value.length !== CODE_LENGTH) return;
+    if (value.length !== CODE_LENGTH || inFlight.current) return;
+    inFlight.current = true;
     setVerifying(true);
     setVerifyError(null);
     try {
@@ -98,9 +101,16 @@ export function EmailVerify({
       });
       onVerified(user);
     } catch (err) {
+      // A duplicate request may lose to one that already used the code: check before failing.
+      const me = await api.get<{ user: SessionUser | null }>('/auth/me').catch(() => null);
+      if (me?.user?.emailVerified) {
+        onVerified(me.user);
+        return;
+      }
       setVerifyError(err);
       setCode('');
     } finally {
+      inFlight.current = false;
       setVerifying(false);
     }
   }
