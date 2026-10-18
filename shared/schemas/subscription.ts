@@ -57,6 +57,25 @@ export const renewSubscriptionSchema = z
   })
   .and(paymentChoice);
 
+/** Customer asks for a monthly plan; an admin activates it after payment. */
+export const planRequestSchema = z.object({
+  vehicleId: z.number({ required_error: 'Choose a vehicle' }).int().positive(),
+  planId: z.number().int().positive(),
+  months: monthsSchema,
+  preferredStartDate: isoDate,
+});
+export type PlanRequestInput = z.input<typeof planRequestSchema>;
+
+export const renewRequestSchema = z.object({
+  months: monthsSchema,
+});
+
+/** Admin activates a PENDING request. */
+export const activatePendingSchema = z.object({
+  startDate: isoDate,
+  washerId: z.number().int().positive().nullish(),
+});
+
 export const cancelSubscriptionSchema = z.object({
   reason: optionalText(255),
 });

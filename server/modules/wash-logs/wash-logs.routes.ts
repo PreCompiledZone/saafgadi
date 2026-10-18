@@ -21,13 +21,14 @@ import {
   washerToday,
   washerUpdateLog,
 } from './wash-logs.service';
+import { washerBookingsToday } from '../one-time/bookings.service';
 
 export const washerRouter = Router();
 washerRouter.get(
   '/today',
-  json((req) => {
+  json(async (req) => {
     const u = currentUser(req);
-    return washerToday(u.id, u.name);
+    return washerToday(u.id, u.name, await washerBookingsToday(u.id));
   }),
 );
 washerRouter.post(

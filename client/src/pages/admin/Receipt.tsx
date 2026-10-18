@@ -18,6 +18,11 @@ function balance(p: PaymentDto): number | null {
 }
 
 /** Plain-text receipt for WhatsApp (`*bold*` is WhatsApp markup). */
+/** Plan name, or the one-time service. */
+function forText(p: PaymentDto): string | null {
+  return p.planName ?? (p.serviceName ? `One-time wash · ${p.serviceName}` : null);
+}
+
 export function receiptText(p: PaymentDto, contact: ContactInfo | undefined): string {
   const due = balance(p);
   const lines = [
@@ -29,7 +34,7 @@ export function receiptText(p: PaymentDto, contact: ContactInfo | undefined): st
     `Amount: *${money(p.amount)}*`,
     `Mode: ${LABELS.paymentMode[p.mode]}${p.reference ? ` (Ref: ${p.reference})` : ''}`,
     p.registrationNumber
-      ? `For: ${p.registrationNumber}${p.planName ? ` · ${p.planName}` : ''}`
+      ? `For: ${p.registrationNumber}${forText(p) ? ` · ${forText(p)}` : ''}`
       : 'For: Advance payment',
     p.periodStart && p.periodEnd
       ? `Period: ${fullDate(p.periodStart)} – ${fullDate(p.periodEnd)}`
@@ -95,8 +100,8 @@ export function ReceiptSheet({
             {p.registrationNumber ? (
               <>
                 <span className="plate font-bold">{p.registrationNumber}</span>
-                {p.planName ? (
-                  <div className="text-xs text-muted font-normal">{p.planName}</div>
+                {forText(p) ? (
+                  <div className="text-xs text-muted font-normal">{forText(p)}</div>
                 ) : null}
               </>
             ) : (

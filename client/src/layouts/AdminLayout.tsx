@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import type { Paged, EnquiryDto } from '@shared/types';
+import type { BookingDto, Paged, EnquiryDto, SubscriptionDto } from '@shared/types';
 import { useApi } from '../api/hooks';
 import { Logo, useAppName } from '../components/brand';
 import { Logout, Menu, X } from '../components/icons';
@@ -9,15 +9,18 @@ import { useAuthActions, useSession } from '../lib/auth';
 
 const NAV = [
   { to: '/admin', label: 'Dashboard', end: true },
+  { to: '/admin/plan-requests', label: 'Plan requests', badge: 'plans' as const },
   { to: '/admin/subscriptions', label: 'Subscriptions' },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/societies', label: 'Societies' },
   { to: '/admin/washers', label: 'Washers' },
   { to: '/admin/vehicles', label: 'Vehicles' },
+  { to: '/admin/bookings', label: 'Bookings', badge: 'bookings' as const },
   { to: '/admin/plans', label: 'Plans & pricing' },
+  { to: '/admin/one-time-services', label: 'One-time washes' },
   { to: '/admin/payments', label: 'Payments' },
   { to: '/admin/wash-logs', label: 'Wash logs' },
-  { to: '/admin/enquiries', label: 'Enquiries', badge: true },
+  { to: '/admin/enquiries', label: 'Enquiries', badge: 'enquiries' as const },
   { to: '/admin/settings', label: 'Settings' },
   { to: '/admin/admins', label: 'Admins' },
 ];
@@ -30,6 +33,21 @@ function SideNav({ onNavigate }: { onNavigate?: () => void }) {
       refetchInterval: 60_000,
     },
   );
+  const requested = useApi<Paged<BookingDto>>(
+    ['admin', 'bookings', 'new-count'],
+    '/admin/bookings?status=REQUESTED&pageSize=1',
+    { refetchInterval: 60_000 },
+  );
+  const pendingPlans = useApi<Paged<SubscriptionDto>>(
+    ['admin', 'subscriptions', 'pending-count'],
+    '/admin/subscriptions?status=PENDING&pageSize=1',
+    { refetchInterval: 60_000 },
+  );
+  const counts = {
+    enquiries: open.data?.total ?? 0,
+    bookings: requested.data?.total ?? 0,
+    plans: pendingPlans.data?.total ?? 0,
+  };
   const { user } = useSession();
   const { logout } = useAuthActions();
   const navigate = useNavigate();
@@ -54,9 +72,9 @@ function SideNav({ onNavigate }: { onNavigate?: () => void }) {
           }
         >
           {n.label}
-          {n.badge && open.data && open.data.total > 0 ? (
+          {n.badge && counts[n.badge] > 0 ? (
             <span className="bg-accent text-white text-xs font-bold rounded-full px-2 py-px">
-              {open.data.total}
+              {counts[n.badge]}
             </span>
           ) : null}
         </NavLink>

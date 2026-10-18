@@ -1,6 +1,7 @@
-import { and, eq, gte, lte, ne, notExists, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, lte, notExists, or, sql, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
-import { vehicleTypeOf } from '../../../shared/enums';
+import { vehicleTypeOf, type VehicleType } from '../../../shared/enums';
+import { expireStalePending } from './requests.service';
 import { normaliseRegistration } from '../../../shared/registration';
 import type { activateSubscriptionSchema, renewSubscriptionSchema } from '../../../shared/schemas';
 import type { Paged, SubscriptionDto } from '../../../shared/types';
@@ -25,6 +26,7 @@ export const SUBSCRIPTION_FILTERS = [
   'expired',
   'cancelled',
   'unpaid',
+  'pending',
 ] as const;
 export type SubscriptionFilter = (typeof SUBSCRIPTION_FILTERS)[number];
 
@@ -56,7 +58,9 @@ function filterSql(filter: SubscriptionFilter, t: string): SQL | undefined {
     case 'cancelled':
       return eq(subscriptions.status, 'CANCELLED');
     case 'unpaid':
-      return and(ne(subscriptions.status, 'CANCELLED'), unpaidSql());
+      return and(eq(subscriptions.status, 'ACTIVE'), unpaidSql());
+    case 'pending':
+      return eq(subscriptions.status, 'PENDING');
     default:
       return undefined;
   }
@@ -71,12 +75,25 @@ export async function listSubscriptions(q: {
   vehicleId?: number;
   washerId?: number;
   societyId?: number;
+  status?: 'PENDING' | 'ACTIVE' | 'CANCELLED';
+  area?: string;
+  planId?: number;
+  vehicleType?: VehicleType;
+  requestedFrom?: string;
+  requestedTo?: string;
 }): Promise<Paged<SubscriptionDto>> {
   const db = getDb();
+  await expireStalePending(db);
   const t = today();
   const term = q.search?.trim();
   const where = and(
-    filterSql(q.filter, t),
+    filterSql(q.status === 'PENDING' ? 'pending' : q.filter, t),
+    q.status && q.status !== 'PENDING' ? eq(subscriptions.status, q.status) : undefined,
+    q.area ? sql`${users.area} like ${`%${q.area}%`}` : undefined,
+    q.planId ? eq(subscriptions.planId, q.planId) : undefined,
+    q.vehicleType ? eq(subscriptions.vehicleType, q.vehicleType) : undefined,
+    q.requestedFrom ? sql`date(${subscriptions.createdAt}) >= ${q.requestedFrom}` : undefined,
+    q.requestedTo ? sql`date(${subscriptions.createdAt}) <= ${q.requestedTo}` : undefined,
     q.userId ? eq(subscriptions.userId, q.userId) : undefined,
     q.vehicleId ? eq(subscriptions.vehicleId, q.vehicleId) : undefined,
     q.washerId ? eq(subscriptions.assignedWasherId, q.washerId) : undefined,
@@ -96,9 +113,11 @@ export async function listSubscriptions(q: {
     .innerJoin(vehicles, eq(vehicles.id, subscriptions.vehicleId))
     .where(where);
   const orderBy =
-    q.filter === 'expiring' || q.filter === 'active'
-      ? [sql`${subscriptions.endDate} asc`, sql`${subscriptions.id} asc`]
-      : undefined;
+    q.status === 'PENDING' || q.filter === 'pending'
+      ? [sql`${subscriptions.createdAt} asc`, sql`${subscriptions.id} asc`]
+      : q.filter === 'expiring' || q.filter === 'active'
+        ? [sql`${subscriptions.endDate} asc`, sql`${subscriptions.id} asc`]
+        : undefined;
   const items = await findSubscriptions(db, t, where, {
     limit: q.pageSize,
     offset: (q.page - 1) * q.pageSize,
@@ -114,7 +133,7 @@ async function lockVehicle(tx: Tx, vehicleId: number) {
 }
 
 /** At most one active subscription per vehicle for any given day. */
-async function assertNoOverlap(tx: Tx, vehicleId: number, start: string, end: string) {
+export async function assertNoOverlap(tx: Tx, vehicleId: number, start: string, end: string) {
   const [clash] = await tx
     .select({
       id: subscriptions.id,
@@ -140,7 +159,7 @@ async function assertNoOverlap(tx: Tx, vehicleId: number, start: string, end: st
   }
 }
 
-async function assertWasher(tx: Tx, washerId: number | null | undefined) {
+export async function assertWasher(tx: Tx, washerId: number | null | undefined) {
   if (!washerId) return;
   const [w] = await tx.select().from(users).where(eq(users.id, washerId));
   if (!w || w.role !== 'WASHER') throw badRequest('Choose a washer');
@@ -306,8 +325,10 @@ export async function cancelSubscription(
     const [s] = await tx.select().from(subscriptions).where(eq(subscriptions.id, id)).for('update');
     if (!s) throw notFound('Subscription');
     if (s.status === 'CANCELLED') throw badRequest('Already cancelled');
+    // A request that never started keeps its dates.
     let endDate = s.endDate;
-    if (s.startDate > t) endDate = s.startDate;
+    if (s.status === 'PENDING') endDate = s.endDate;
+    else if (s.startDate > t) endDate = s.startDate;
     else if (s.endDate >= t) endDate = t;
     const notes = [s.notes, `Cancelled on ${t}${reason ? `: ${reason}` : ''}`]
       .filter(Boolean)

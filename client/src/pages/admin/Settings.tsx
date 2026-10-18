@@ -1,5 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { settingsSchema } from '@shared/schemas';
+import { parseSlots, type SlotSetting } from '@shared/enums';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { api } from '../../api/client';
@@ -36,6 +38,12 @@ function SettingsForm({ initial }: { initial: Out }) {
   const { register, handleSubmit, formState, setError, watch, setValue } = form;
   const e = formState.errors;
   const wa = watch('whatsapp_number');
+  const [slots, setSlots] = useState<SlotSetting[]>(() => parseSlots(initial.booking_slots));
+  useEffect(() => {
+    setValue('booking_slots', slots, { shouldDirty: true });
+  }, [slots, setValue]);
+  const setSlot = (i: number, patch: Partial<SlotSetting>) =>
+    setSlots(slots.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   return (
     <form
       noValidate
@@ -130,8 +138,71 @@ function SettingsForm({ initial }: { initial: Out }) {
             setValue('show_washer_contact', ev.target.checked, { shouldDirty: true })
           }
         />
+      </Card>
+      <Card className="flex flex-col gap-4 lg:col-span-2">
+        <CardHeader
+          title="One-time wash slots"
+          sub="Time slots customers can pick when booking a one-time wash"
+        />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {slots.map((s, i) => (
+            <div key={s.key} className="bg-canvas rounded-[14px] p-3 flex flex-col gap-2.5">
+              <Field label="Name" htmlFor={`sl-${s.key}`}>
+                <Input
+                  id={`sl-${s.key}`}
+                  value={s.label}
+                  onChange={(ev) => setSlot(i, { label: ev.target.value })}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="From" htmlFor={`ss-${s.key}`}>
+                  <Input
+                    id={`ss-${s.key}`}
+                    type="time"
+                    value={s.start}
+                    onChange={(ev) => setSlot(i, { start: ev.target.value })}
+                  />
+                </Field>
+                <Field label="To" htmlFor={`se-${s.key}`}>
+                  <Input
+                    id={`se-${s.key}`}
+                    type="time"
+                    value={s.end}
+                    onChange={(ev) => setSlot(i, { end: ev.target.value })}
+                  />
+                </Field>
+              </div>
+              <Checkbox
+                label="Offered"
+                checked={s.enabled}
+                onChange={(ev) => setSlot(i, { enabled: ev.target.checked })}
+              />
+            </div>
+          ))}
+        </div>
+        {e.booking_slots ? (
+          <span role="alert" className="text-[13px] font-medium text-danger">
+            {e.booking_slots.message ?? 'Check the slot times: each must end after it starts'}
+          </span>
+        ) : null}
+        <Checkbox
+          label="Allow same-day bookings"
+          hint="Off: the earliest a customer can book is tomorrow"
+          checked={
+            watch('booking_allow_same_day') === 'true' || watch('booking_allow_same_day') === true
+          }
+          onChange={(ev) =>
+            setValue('booking_allow_same_day', ev.target.checked, { shouldDirty: true })
+          }
+        />
         <FormError error={e.root?.message} />
-        <Button type="submit" variant="cta" size="lg" loading={formState.isSubmitting}>
+        <Button
+          type="submit"
+          variant="cta"
+          size="lg"
+          className="self-start"
+          loading={formState.isSubmitting}
+        >
           Save settings
         </Button>
       </Card>

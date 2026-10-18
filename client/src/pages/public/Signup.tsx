@@ -414,11 +414,15 @@ export function Signup() {
         return;
       }
       await signedIn(res.user);
-      const plan = params.get('plan');
-      navigate(`/app/welcome${plan ? `?plan=${plan}` : ''}`, {
-        replace: true,
-        state: { registration: v?.registrationNumber },
-      });
+      // Came from "Book now" (or another page that needs an account): go back there.
+      const next = params.get('next');
+      if (next?.startsWith('/app/')) {
+        navigate(next, { replace: true });
+        return;
+      }
+      // Signed up from a plan's "Book" button: straight to that plan's request form.
+      const plan = Number(params.get('plan'));
+      navigate(plan ? `/app/plans/${plan}/book` : '/app', { replace: true });
     } catch (err) {
       if (
         err instanceof ApiError &&
@@ -501,8 +505,8 @@ export function Signup() {
         ) : (
           <>
             <Heading
-              title="Add your vehicle"
-              sub="So your washer knows what to clean and where to find it"
+              title="Add your vehicle (optional)"
+              sub="Needed for a monthly plan. For a one-time wash you can enter it while booking."
             />
             <div className="pt-6">
               <VehicleForm
@@ -518,6 +522,7 @@ export function Signup() {
                     {skipError ? <FormError error={skipError} /> : null}
                     <Button
                       variant="ghost"
+                      className="underline underline-offset-4"
                       loading={skipping}
                       onClick={async () => {
                         setSkipping(true);
@@ -531,7 +536,7 @@ export function Signup() {
                         }
                       }}
                     >
-                      Skip — I’ll add it later
+                      Skip for now
                     </Button>
                   </>
                 }

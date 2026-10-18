@@ -12,6 +12,7 @@ import type {
   HistoryEntry,
   MissedActivity,
   Paged,
+  WasherBookingItem,
   WasherToday,
   WasherTodayActivity,
   WasherTodayItem,
@@ -164,7 +165,12 @@ const coveringDate = (date: string) =>
 
 // -------------------------------------------------------------- washer
 
-export async function washerToday(washerId: number, washerName: string): Promise<WasherToday> {
+/** Subscription washes due today, plus the washer's confirmed one-time jobs. */
+export async function washerToday(
+  washerId: number,
+  washerName: string,
+  oneTime: WasherBookingItem[] = [],
+): Promise<WasherToday> {
   const db = getDb();
   const t = today();
   const contexts = await loadContexts(
@@ -220,16 +226,35 @@ export async function washerToday(washerId: number, washerName: string): Promise
     });
   }
 
+  for (const b of oneTime) {
+    if (b.status === 'COMPLETED') counts.done++;
+    else if (b.status === 'NOT_DONE') counts.notDone++;
+    else counts.toDo++;
+  }
+
   // Sorted by society/area so the washer can work through one building at a time.
-  const key = (i: WasherTodayItem) =>
+  type Place = Pick<WasherTodayItem, 'area' | 'societyOrBuilding' | 'flatOrHouseNo'>;
+  const key = (i: Place) =>
     [i.area ?? '', i.societyOrBuilding ?? '', i.flatOrHouseNo ?? ''].join('|').toLowerCase();
-  items.sort((a, b) => key(a).localeCompare(key(b), 'en', { numeric: true }));
+  const all = [
+    ...items.map((item) => ({ item, booking: null })),
+    ...oneTime.map((booking) => ({ item: null, booking })),
+  ].sort((a, b) =>
+    key((a.item ?? a.booking)!).localeCompare(key((b.item ?? b.booking)!), 'en', {
+      numeric: true,
+    }),
+  );
   const groups: WasherToday['groups'] = [];
-  for (const item of items) {
-    const society = [item.societyOrBuilding, item.area].filter(Boolean).join(', ') || 'Other';
-    const last = groups.at(-1);
-    if (last && last.society === society) last.items.push(item);
-    else groups.push({ society, items: [item] });
+  for (const { item, booking } of all) {
+    const place = (item ?? booking)!;
+    const society = [place.societyOrBuilding, place.area].filter(Boolean).join(', ') || 'Other';
+    let group = groups.find((g) => g.society === society);
+    if (!group) {
+      group = { society, items: [], bookings: [] };
+      groups.push(group);
+    }
+    if (item) group.items.push(item);
+    if (booking) group.bookings.push(booking);
   }
   return { today: t, washerName, counts, groups };
 }

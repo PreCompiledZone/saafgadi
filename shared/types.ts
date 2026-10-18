@@ -1,6 +1,10 @@
 // Response shapes shared by the API and the client.
 import type {
+  BookingPaymentStatus,
+  BookingSlot,
+  BookingStatus,
   CarType,
+  SlotSetting,
   DisplayStatus,
   EnquiryStatus,
   EnquiryType,
@@ -196,7 +200,22 @@ export interface UserVehicleSummary {
   recent: WashLogDto[];
   /** The assigned washer's contact, when the business allows customers to reach them. */
   washer: WasherContact | null;
+  /** A request waiting for activation (a new plan, or a renewal of `subscription`). */
+  pending: SubscriptionDto | null;
+  /** What today looks like for the current plan. */
+  todayStatus: TodayStatus | null;
+  /** Next date a wash is due (today if due today). */
+  nextWashDate: string | null;
+  /** "Renew plan" is open: in the renew window and not renewed yet. */
+  canRenew: boolean;
 }
+
+export type TodayStatus =
+  | { kind: 'WASHED'; at: string; washerFirstName: string; activityName: string }
+  | { kind: 'MISSED'; reason: string }
+  | { kind: 'DUE' }
+  | { kind: 'NOT_DUE'; next: string | null }
+  | { kind: 'STARTS'; date: string };
 
 export interface WasherContact {
   name: string;
@@ -206,7 +225,25 @@ export interface WasherContact {
 export interface UserDashboard {
   today: string;
   name: string;
+  /** Time of day in APP_TIMEZONE, for "Good morning". */
+  greeting: 'morning' | 'afternoon' | 'evening';
+  /** `active` once any vehicle has an ACTIVE plan that hasn't ended. */
+  state: 'none' | 'active';
+  /** Tab to open: monthly with any ACTIVE or PENDING plan, otherwise one-time. */
+  defaultTab: 'monthly' | 'one-time';
+  /** Something waiting on each tab (pending request / renewal due; open booking). */
+  badges: { monthly: boolean; oneTime: boolean };
+  /** Every active vehicle on the account. */
   vehicles: UserVehicleSummary[];
+  /** REQUESTED / CONFIRMED one-time bookings, soonest first. */
+  upcomingBookings: BookingDto[];
+  /** Active one-time services, for the "Pick a wash" tiles. */
+  oneTimeServices: OneTimeServiceDto[];
+  lowestOneTimePrice: number | null;
+  lowestMonthlyPrice: number | null;
+  renewWindowDays: number;
+  /** Booking slot labels, for the upcoming one-time wash. */
+  slots: SlotSetting[];
 }
 
 export interface HistoryEntry {
@@ -244,11 +281,34 @@ export interface WasherTodayItem {
   activities: WasherTodayActivity[];
 }
 
+/** A confirmed one-time wash on the washer's list. */
+export interface WasherBookingItem {
+  bookingId: number;
+  ref: string;
+  serviceName: string;
+  durationMinutes: number | null;
+  slot: BookingSlot;
+  slotLabel: string;
+  registrationNumber: string;
+  vehicleType: VehicleType;
+  vehicleLabel: string;
+  color: string;
+  ownerName: string;
+  societyOrBuilding: string;
+  flatOrHouseNo: string;
+  area: string;
+  parkingNotes: string | null;
+  customerNotes: string | null;
+  status: BookingStatus;
+  completedAt: string | null;
+  notDoneReason: string | null;
+}
+
 export interface WasherToday {
   today: string;
   washerName: string;
   counts: { toDo: number; done: number; notDone: number };
-  groups: { society: string; items: WasherTodayItem[] }[];
+  groups: { society: string; items: WasherTodayItem[]; bookings: WasherBookingItem[] }[];
 }
 
 export interface EnquiryDto {
@@ -272,6 +332,9 @@ export interface EnquiryDto {
 export interface PaymentDto {
   id: number;
   subscriptionId: number | null;
+  bookingId: number | null;
+  /** One-time service, for booking payments. */
+  serviceName: string | null;
   userId: number;
   userName: string;
   userMobile: string;
@@ -304,6 +367,10 @@ export interface AdminDashboard {
   expired: { count: number };
   unpaid: { count: number };
   openEnquiries: { count: number; items: EnquiryDto[] };
+  /** One-time washes: waiting for confirmation, and confirmed for today. */
+  bookings: { requested: number; today: number };
+  /** Monthly plan requests waiting for payment / activation. */
+  pendingActivations: number;
   paymentsThisMonth: { total: number; count: number };
   washers: { id: number; name: string; due: number; done: number; behind: number }[];
   societies: SocietyToday[];
@@ -369,4 +436,98 @@ export interface UnlistedSociety {
   pincode: string | null;
   customers: number;
   activeSubscriptions: number;
+}
+
+// ------------------------------------------------------- one-time washes
+
+export interface OneTimeServiceDto {
+  id: number;
+  name: string;
+  description: string | null;
+  includes: string[];
+  appliesTo: VehicleType[];
+  durationMinutes: number;
+  isActive: boolean;
+  sortOrder: number;
+  prices: { vehicleType: VehicleType; price: number }[];
+  /** Lowest price among the types it applies to. */
+  fromPrice: number;
+}
+
+export interface BookingEventDto {
+  fromStatus: BookingStatus | null;
+  toStatus: BookingStatus;
+  actorName: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface BookingDto {
+  id: number;
+  /** `SG-B-000123` */
+  ref: string;
+  userId: number;
+  userName: string;
+  userMobile: string;
+  serviceId: number;
+  serviceName: string;
+  vehicleType: VehicleType;
+  price: number;
+  vehicleId: number | null;
+  registrationNumber: string;
+  vehicleMake: string | null;
+  vehicleModel: string | null;
+  vehicleColor: string;
+  addressLine: string | null;
+  societyOrBuilding: string;
+  flatOrHouseNo: string;
+  area: string;
+  city: string;
+  pincode: string;
+  parkingNotes: string | null;
+  preferredDate: string;
+  preferredSlot: BookingSlot;
+  status: BookingStatus;
+  assignedWasherId: number | null;
+  /** Full name for admins, first name for customers. */
+  assignedWasherName: string | null;
+  scheduledDate: string | null;
+  scheduledSlot: BookingSlot | null;
+  /** Scheduled when confirmed, otherwise preferred. */
+  date: string;
+  slot: BookingSlot;
+  completedAt: string | null;
+  notDoneReason: string | null;
+  cancelReason: string | null;
+  customerNotes: string | null;
+  adminNotes: string | null;
+  paymentStatus: BookingPaymentStatus;
+  paidAmount: number;
+  /** The customer can still cancel it themselves. */
+  canCancel: boolean;
+  createdAt: string;
+  events?: BookingEventDto[];
+}
+
+export interface BookingOptions {
+  today: string;
+  minDate: string;
+  maxDate: string;
+  /** Enabled slots, in order. */
+  slots: SlotSetting[];
+  /** Slots already at capacity. */
+  full: { date: string; slot: BookingSlot }[];
+  openCount: number;
+  maxOpen: number;
+  cancelCutoffHours: number;
+}
+
+export type MyWashItem =
+  | { kind: 'MONTHLY'; date: string; registrationNumber: string; log: WashLogDto }
+  | { kind: 'ONE_TIME'; date: string; registrationNumber: string; booking: BookingDto };
+
+export interface MyWashes extends Paged<MyWashItem> {
+  /** Registration numbers from the customer's subscriptions and bookings, for the filter. */
+  registrations: string[];
+  slots: SlotSetting[];
 }

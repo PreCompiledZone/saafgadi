@@ -29,6 +29,13 @@
       "when": 1792072201024,
       "tag": "0003_signup_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1792158866753,
+      "tag": "0004_one_time_bookings",
+      "breakpoints": true
     }
   ]
 }

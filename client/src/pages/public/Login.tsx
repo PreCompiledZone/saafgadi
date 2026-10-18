@@ -7,6 +7,7 @@ import { api } from '../../api/client';
 import { Logo } from '../../components/brand';
 import { Button, Field, FormError, Input } from '../../components/ui';
 import { HOME_FOR, useAuthActions } from '../../lib/auth';
+import { clearDashboardTab } from '../../lib/dashboardTab';
 
 export function Login() {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export function Login() {
   const submit = handleSubmit(async (values) => {
     try {
       const { user } = await api.post<{ user: SessionUser }>('/auth/login', values);
+      clearDashboardTab();
       await signedIn(user);
       const next = params.get('next');
       const home = HOME_FOR[user.role];
@@ -77,7 +79,14 @@ export function Login() {
 
       <p className="text-center text-[15px] text-muted mt-8">
         New here?{' '}
-        <Link to="/signup" className="font-semibold">
+        <Link
+          to={
+            params.get('next')
+              ? `/signup?next=${encodeURIComponent(params.get('next')!)}`
+              : '/signup'
+          }
+          className="font-semibold"
+        >
           Create an account
         </Link>
       </p>

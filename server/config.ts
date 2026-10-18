@@ -72,6 +72,15 @@ const envSchema = z.object({
   SIGNUP_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
   BLOCK_DISPOSABLE_EMAILS: bool.default('true'),
 
+  BOOKING_CANCEL_CUTOFF_HOURS: z.coerce.number().int().min(0).max(168).default(12),
+  BOOKING_MAX_DAYS_AHEAD: z.coerce.number().int().min(1).max(90).default(14),
+  BOOKING_ALLOW_SAME_DAY: bool.default('false'),
+  MAX_OPEN_BOOKINGS_PER_USER: z.coerce.number().int().min(1).max(50).default(3),
+  ONE_TIME_SLOT_CAPACITY: z.coerce.number().int().min(0).max(1000).default(0),
+  ADMIN_NOTIFY_EMAIL: optional.pipe(z.string().email().optional()),
+  PLAN_REQUEST_EXPIRY_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  PLAN_RENEW_WINDOW_DAYS: z.coerce.number().int().min(1).max(60).default(5),
+
   RUN_MIGRATIONS_ON_START: bool.default('true'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
@@ -138,6 +147,22 @@ function buildConfig(env: z.infer<typeof envSchema>) {
     signup: {
       tokenTtlMinutes: env.SIGNUP_TOKEN_TTL_MINUTES,
       blockDisposableEmails: env.BLOCK_DISPOSABLE_EMAILS,
+    },
+    booking: {
+      cancelCutoffHours: env.BOOKING_CANCEL_CUTOFF_HOURS,
+      maxDaysAhead: env.BOOKING_MAX_DAYS_AHEAD,
+      /** Default for the `booking_allow_same_day` setting; admins change it in the app. */
+      allowSameDay: env.BOOKING_ALLOW_SAME_DAY,
+      maxOpenPerUser: env.MAX_OPEN_BOOKINGS_PER_USER,
+      /** Bookings per slot per day; 0 = no limit. */
+      slotCapacity: env.ONE_TIME_SLOT_CAPACITY,
+      adminNotifyEmail: env.ADMIN_NOTIFY_EMAIL,
+    },
+    plans: {
+      /** PENDING requests older than this read as cancelled. */
+      requestExpiryDays: env.PLAN_REQUEST_EXPIRY_DAYS,
+      /** "Renew plan" shows this many days before a plan ends. */
+      renewWindowDays: env.PLAN_RENEW_WINDOW_DAYS,
     },
     runMigrationsOnStart: env.RUN_MIGRATIONS_ON_START,
     logLevel: env.LOG_LEVEL,

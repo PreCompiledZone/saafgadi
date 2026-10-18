@@ -4,7 +4,6 @@ import { useApi } from '../../api/hooks';
 import { Message } from '../../components/icons';
 import { Badge, Card, EmptyState, LinkButton, PageTitle, QueryView } from '../../components/ui';
 import { dateTime } from '../../lib/format';
-import { ContactButtons } from '../../components/contact';
 
 export function EnquiryStatusBadge({ status }: { status: EnquiryDto['status'] }) {
   const tone = status === 'OPEN' ? 'accent' : status === 'CONTACTED' ? 'warn' : 'muted';
@@ -50,7 +49,6 @@ export function Enquiries() {
           )
         }
       </QueryView>
-      <ContactButtons className="mt-2" />
     </div>
   );
 }

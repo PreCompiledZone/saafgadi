@@ -1,5 +1,11 @@
 import { LABELS, NOT_DONE_REASONS, type NotDoneReason, type WashStatus } from '@shared/enums';
-import type { WasherToday, WasherTodayActivity, WasherTodayItem, WashLogDto } from '@shared/types';
+import type {
+  WasherBookingItem,
+  WasherToday,
+  WasherTodayActivity,
+  WasherTodayItem,
+  WashLogDto,
+} from '@shared/types';
 import { useState } from 'react';
 import { api } from '../../api/client';
 import { useApi, useApiMutation } from '../../api/hooks';
@@ -337,8 +343,182 @@ function VehicleSheet({
   );
 }
 
+/** One-time job row: service, slot and where; tapping opens Done / Not done. */
+function BookingRow({ b, onOpen }: { b: WasherBookingItem; onOpen: () => void }) {
+  const open = b.status === 'CONFIRMED';
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cx(
+        'w-full text-left bg-white rounded-[16px] px-4 py-3 shadow-card flex items-center gap-3 border-l-4 border-cta-line',
+        !open && 'opacity-70',
+      )}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold plate">{b.registrationNumber}</span>
+          <Tag>One-time</Tag>
+        </div>
+        <div className="text-[13px] text-muted truncate">
+          {b.serviceName} · {b.slotLabel}
+        </div>
+        <div className="text-[13px] text-muted truncate">
+          {[`Flat ${b.flatOrHouseNo}`, b.parkingNotes].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+      {open ? (
+        <Tag>To do</Tag>
+      ) : b.status === 'NOT_DONE' ? (
+        <span className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-warn-soft text-warn-ink">
+          <X size={15} strokeWidth={3} />
+        </span>
+      ) : (
+        <span className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-accent text-white">
+          <Check size={15} strokeWidth={3.4} />
+        </span>
+      )}
+      <ChevronRight size={18} className="text-muted shrink-0" />
+    </button>
+  );
+}
+
+function BookingSheet({ b, onClose }: { b: WasherBookingItem; onClose: () => void }) {
+  const toast = useToast();
+  const [notDone, setNotDone] = useState(false);
+  const [reason, setReason] = useState<NotDoneReason | null>(null);
+  const [note, setNote] = useState('');
+  const complete = useApiMutation(
+    () => api.post(`/washer/bookings/${b.bookingId}/complete`),
+    [['washer']],
+  );
+  const fail = useApiMutation(
+    (body: { reason: string }) => api.post(`/washer/bookings/${b.bookingId}/not-done`, body),
+    [['washer']],
+  );
+  const open = b.status === 'CONFIRMED';
+  return (
+    <Sheet open onClose={onClose} title={b.registrationNumber}>
+      <div className="flex flex-col gap-3 pb-2">
+        <div className="flex items-center gap-2">
+          <Tag>One-time</Tag>
+          <span className="text-sm text-muted">{b.ref}</span>
+        </div>
+        <div>
+          <div className="font-semibold">{b.serviceName}</div>
+          <div className="text-sm text-muted">
+            {b.slotLabel}
+            {b.durationMinutes ? ` · about ${b.durationMinutes} min` : ''}
+          </div>
+        </div>
+        <div className="text-sm text-muted">
+          {b.vehicleLabel} · {vehicleTypeLabel(b.vehicleType)} · {b.color} ·{' '}
+          {shortName(b.ownerName)}
+        </div>
+        <div className="flex gap-2 items-center text-sm bg-white rounded-[10px] px-2.5 py-2">
+          <MapPin size={18} className="text-muted shrink-0" />
+          <span>
+            {[`Flat ${b.flatOrHouseNo}`, b.societyOrBuilding, b.parkingNotes]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        </div>
+        {b.customerNotes ? (
+          <p className="text-sm bg-white rounded-[10px] px-2.5 py-2">“{b.customerNotes}”</p>
+        ) : null}
+        {!open ? (
+          <p className="text-[15px] font-semibold">
+            {b.status === 'COMPLETED' && b.completedAt
+              ? `Done at ${timeOf(b.completedAt)}`
+              : `Not done${b.notDoneReason ? `: ${b.notDoneReason}` : ''}`}
+          </p>
+        ) : notDone ? (
+          <>
+            <fieldset className="border-0 p-0 m-0">
+              <legend className="font-semibold text-sm mb-2.5">Reason</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {NOT_DONE_REASONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    aria-pressed={reason === r}
+                    onClick={() => setReason(r)}
+                    className={cx(
+                      'min-h-14 rounded-[14px] px-3 text-[15px] text-left',
+                      reason === r
+                        ? 'border-2 border-accent bg-accent-soft font-semibold text-accent-deep'
+                        : 'border border-line bg-white',
+                    )}
+                  >
+                    {LABELS.reason[r]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <Textarea
+              aria-label="Note (optional)"
+              placeholder="Note (optional), e.g. car not in its slot"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="min-h-20"
+            />
+            <FormError error={fail.error} />
+            <Button
+              size="lg"
+              disabled={!reason}
+              loading={fail.isPending}
+              onClick={async () => {
+                try {
+                  const text = [LABELS.reason[reason!], note.trim()].filter(Boolean).join(': ');
+                  await fail.mutateAsync({ reason: text });
+                  toast(`${b.registrationNumber} marked not done`);
+                  onClose();
+                } catch {
+                  /* shown */
+                }
+              }}
+            >
+              Save as not done
+            </Button>
+          </>
+        ) : (
+          <>
+            <FormError error={complete.error} />
+            <div className="grid grid-cols-[3fr_2fr] gap-2">
+              <Button
+                variant="cta"
+                className="h-[54px] text-base font-bold"
+                loading={complete.isPending}
+                onClick={async () => {
+                  try {
+                    await complete.mutateAsync(undefined);
+                    toast(`${b.registrationNumber} · ${b.serviceName} done`);
+                    onClose();
+                  } catch {
+                    /* shown */
+                  }
+                }}
+              >
+                <CheckCircle size={20} /> Done
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-[54px] border-line-strong"
+                onClick={() => setNotDone(true)}
+              >
+                Not done
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
 export function Today() {
   const q = useApi<WasherToday>(['washer', 'today'], '/washer/today', { refetchInterval: 120_000 });
+  const [bookingId, setBookingId] = useState<number | null>(null);
   const [sheet, setSheet] = useState<{
     subscriptionId: number;
     log?: { activityId: number; mode: 'not-done' | 'change' };
@@ -394,7 +574,7 @@ export function Today() {
               {d.groups.length === 0 ? (
                 <div className="bg-white rounded-[20px] shadow-card mt-2">
                   <EmptyState icon={<CheckCircle size={24} />} title="Nothing to wash right now">
-                    Vehicles assigned to you appear here on the days they’re due.
+                    Vehicles and one-time jobs assigned to you appear here on the days they’re due.
                   </EmptyState>
                 </div>
               ) : (
@@ -403,6 +583,13 @@ export function Today() {
                     <h2 className="mt-2 mx-1 font-sans text-[13px] font-semibold text-muted tracking-[1.2px] uppercase">
                       {g.society}
                     </h2>
+                    {g.bookings.map((b) => (
+                      <BookingRow
+                        key={`b${b.bookingId}`}
+                        b={b}
+                        onOpen={() => setBookingId(b.bookingId)}
+                      />
+                    ))}
                     {g.items.map((item) => (
                       <VehicleRow
                         key={item.subscriptionId}
@@ -414,6 +601,10 @@ export function Today() {
                 ))
               )}
             </div>
+            {(() => {
+              const b = d.groups.flatMap((g) => g.bookings).find((x) => x.bookingId === bookingId);
+              return b ? <BookingSheet b={b} onClose={() => setBookingId(null)} /> : null;
+            })()}
             {openItem && sheet && !sheet.log ? (
               <VehicleSheet
                 item={openItem}

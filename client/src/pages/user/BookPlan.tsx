@@ -1,87 +1,61 @@
-import { LABELS } from '@shared/enums';
-import type { EnquiryDto, VehicleDto } from '@shared/types';
+import { LABELS, SUBSCRIPTION_MONTH_OPTIONS, subscriptionRef } from '@shared/enums';
+import type { SubscriptionDto, VehicleDto } from '@shared/types';
 import { useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api } from '../../api/client';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { api, ApiError } from '../../api/client';
 import { useApi, useApiMutation, useContact, usePublicPlans } from '../../api/hooks';
-import { Check, ChevronLeft, ChevronRight, Message, Phone, WhatsApp } from '../../components/icons';
-import { priceText } from '../../components/PlanCard';
+import { Bike, Car, Check, ChevronLeft, Plus, WhatsApp } from '../../components/icons';
+import { PlanServices, priceText } from '../../components/PlanCard';
 import {
+  AnchorButton,
+  Button,
   Card,
+  ChoiceGroup,
+  cx,
   EmptyState,
+  Field,
   FormError,
   FullPageSpinner,
+  Input,
   LinkButton,
-  Notice,
-  Switch,
 } from '../../components/ui';
-import { bookingMessage, callLink, whatsappLink, greeting } from '../../lib/contact';
-import { useSession } from '../../lib/auth';
+import { VehicleForm } from '../../components/VehicleForm';
+import { greeting, whatsappLink } from '../../lib/contact';
+import { addDaysIso, fullDate, money } from '../../lib/format';
+import { todayIst } from '../../lib/forms';
 
-function OptionRow({
-  icon,
-  title,
-  sub,
-  href,
-  onClick,
-  external,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  sub: string;
-  href?: string;
-  onClick: () => void;
-  external?: boolean;
-}) {
-  const body = (
-    <>
-      <span className="w-10 h-10 shrink-0 rounded-full bg-accent-soft text-accent-ink flex items-center justify-center">
-        {icon}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block font-semibold">{title}</span>
-        <span className="block text-[13px] text-muted">{sub}</span>
-      </span>
-      <ChevronRight size={20} className="text-muted" />
-    </>
-  );
-  const cls =
-    'flex items-center gap-3.5 px-4 py-3.5 rounded-2xl bg-white border border-line text-ink no-underline text-left w-full hover:border-line-strong';
-  return href ? (
-    <a
-      href={href}
-      target={external ? '_blank' : undefined}
-      rel={external ? 'noopener noreferrer' : undefined}
-      onClick={onClick}
-      className={cls}
-    >
-      {body}
-    </a>
-  ) : (
-    <button type="button" onClick={onClick} className={cls}>
-      {body}
-    </button>
-  );
-}
+const START_MAX_DAYS = 30;
 
+/** Request a monthly plan (PENDING until we activate it), or renew one (?renew=<id>). */
 export function BookPlan() {
   const { planId } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const plans = usePublicPlans();
-  const vehicles = useApi<VehicleDto[]>(['me', 'vehicles'], '/me/vehicles');
   const contact = useContact().data;
-  const { user } = useSession();
-  const [asap, setAsap] = useState(true);
-  const [sent, setSent] = useState<EnquiryDto | null>(null);
-  const change = params.get('change') === '1';
-  const enquire = useApiMutation(
-    (body: { type: string; vehicleId?: number; planId: number; message: string }) =>
-      api.post<EnquiryDto>('/me/enquiries', body),
-    [['me', 'enquiries'], ['admin']],
+  const plans = usePublicPlans();
+  const vehiclesQ = useApi<VehicleDto[]>(['me', 'vehicles'], '/me/vehicles');
+  const subsQ = useApi<SubscriptionDto[]>(['me', 'subscriptions'], '/me/subscriptions');
+  const renewId = Number(params.get('renew')) || null;
+  const today = todayIst();
+  const [vehicleId, setVehicleId] = useState<number | null>(Number(params.get('vehicle')) || null);
+  const [adding, setAdding] = useState(false);
+  const [months, setMonths] = useState<number>(1);
+  const [start, setStart] = useState(addDaysIso(today, 1));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [done, setDone] = useState<SubscriptionDto | null>(null);
+  const request = useApiMutation(
+    (body: unknown) =>
+      renewId
+        ? api.post<SubscriptionDto>(`/subscriptions/${renewId}/renew`, body)
+        : api.post<SubscriptionDto>('/subscriptions', body),
+    [['me']],
+  );
+  const addVehicle = useApiMutation(
+    (body: unknown) => api.post<VehicleDto>('/me/vehicles', body),
+    [['me']],
   );
 
-  if (plans.isLoading || vehicles.isLoading) return <FullPageSpinner />;
+  if (plans.isLoading || vehiclesQ.isLoading || subsQ.isLoading) return <FullPageSpinner />;
   const plan = plans.data?.find((p) => p.id === Number(planId));
   if (!plan) {
     return (
@@ -91,166 +65,238 @@ export function BookPlan() {
       />
     );
   }
-  const eligible = (vehicles.data ?? []).filter(
-    (v) => v.isActive && v.category === plan.vehicleCategory,
-  );
-  const vehicle = eligible.find((v) => v.id === Number(params.get('vehicle'))) ?? eligible[0];
+  const subs = subsQ.data ?? [];
+  const renewing = renewId ? subs.find((s) => s.id === renewId) : undefined;
+  const busy = (v: VehicleDto) =>
+    subs.some(
+      (s) =>
+        s.vehicleId === v.id &&
+        (s.status === 'PENDING' || (s.status === 'ACTIVE' && s.endDate >= today)),
+    );
+  const vehicles = (vehiclesQ.data ?? []).filter((v) => v.isActive);
+  const vehicle = renewing
+    ? vehicles.find((v) => v.id === renewing.vehicleId)
+    : vehicles.find((v) => v.id === vehicleId);
+  const price = vehicle
+    ? plan.prices.find((p) => p.vehicleType === vehicle.vehicleType && p.isActive)
+    : undefined;
+  const startDate = renewing ? addDaysIso(renewing.endDate, 1) : start;
   const shortName = plan.name.replace(/ plan$/i, '');
 
-  if (!vehicle) {
-    return (
-      <div className="pt-1">
-        <EmptyState
-          title={`Add a ${plan.vehicleCategory === 'CAR' ? 'car' : 'bike'} first`}
-          action={
-            <LinkButton to="/app/vehicles?add=1" variant="cta">
-              Add vehicle
-            </LinkButton>
-          }
-        >
-          {plan.name} is for {plan.vehicleCategory === 'CAR' ? 'cars' : 'bikes'}.
-        </EmptyState>
-      </div>
+  if (done) {
+    const ref = subscriptionRef(done.id);
+    const wa = whatsappLink(
+      contact,
+      `${greeting(contact)}, plan request ${ref} for ${done.registrationNumber}`,
     );
-  }
-
-  const price = plan.prices.find((p) => p.vehicleType === vehicle.vehicleType && p.isActive);
-  const start = asap ? 'As soon as possible' : 'I’ll tell you a start date';
-  const message = bookingMessage({
-    contact,
-    intro: `${greeting(contact)}, I’d like to ${change ? 'change my plan to' : 'book'} ${plan.name}.`,
-    name: user?.name,
-    mobile: user?.mobile,
-    registration: vehicle.registrationNumber,
-    vehicle: `${vehicle.make} ${vehicle.model}, ${LABELS.vehicleType[vehicle.vehicleType]}`,
-    plan: `${plan.name}${price && price.monthlyPrice > 0 ? ` (${priceText(price.monthlyPrice)}/month)` : ''}`,
-    start,
-  });
-  const wa = whatsappLink(contact, message);
-  const tel = callLink(contact);
-  const record = () =>
-    enquire.mutateAsync({
-      type: change ? 'CHANGE_PLAN' : 'NEW_PLAN',
-      vehicleId: vehicle.id,
-      planId: plan.id,
-      message,
-    });
-
-  if (sent) {
     return (
       <div className="pt-6 flex flex-col items-center text-center gap-3">
         <span className="w-16 h-16 rounded-2xl bg-accent-soft-2 text-accent-deep flex items-center justify-center">
           <Check size={30} strokeWidth={2.6} />
         </span>
-        <h1 className="text-[26px] font-bold">Enquiry sent</h1>
+        <h1 className="text-[26px] font-bold">Plan requested</h1>
         <p className="text-[15px] text-muted">
-          We’ll call you back on {user?.mobile} to confirm {plan.name} for{' '}
-          {vehicle.registrationNumber}.
+          {ref} · {done.planName} for {done.registrationNumber}, {done.months}{' '}
+          {done.months === 1 ? 'month' : 'months'} from {fullDate(done.startDate)}. Pay by cash or
+          UPI and we’ll activate it.
         </p>
         <div className="flex flex-col gap-2.5 w-full mt-4">
-          <LinkButton to="/app/enquiries" variant="cta" size="lg">
-            My enquiries
-          </LinkButton>
+          {wa ? (
+            <AnchorButton
+              href={wa}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="cta"
+              size="lg"
+            >
+              <WhatsApp size={18} /> Message us on WhatsApp
+            </AnchorButton>
+          ) : null}
           <LinkButton to="/app">Back to home</LinkButton>
         </div>
       </div>
     );
   }
 
+  async function submit() {
+    setErrors({});
+    if (!vehicle) {
+      setErrors({ vehicleId: 'Choose a vehicle' });
+      return;
+    }
+    try {
+      const s = await request.mutateAsync(
+        renewing
+          ? { months }
+          : { vehicleId: vehicle.id, planId: plan!.id, months, preferredStartDate: start },
+      );
+      setDone(s);
+      window.scrollTo({ top: 0 });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setErrors(Object.fromEntries(Object.entries(err.fieldErrors).map(([k, v]) => [k, v[0]])));
+      }
+    }
+  }
+
   return (
-    <div className="flex flex-col min-h-[calc(100dvh-200px)]">
-      <button
-        type="button"
-        aria-label="Back"
-        onClick={() => navigate(-1)}
-        className="w-11 h-11 -ml-3 flex items-center justify-center rounded-full hover:bg-white"
-      >
-        <ChevronLeft size={22} />
-      </button>
-      <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-5 pb-4">
+      <div>
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={() => navigate(-1)}
+          className="w-11 h-11 -ml-3 flex items-center justify-center rounded-full hover:bg-white"
+        >
+          <ChevronLeft size={22} />
+        </button>
         <h1 className="text-[27px] font-bold tracking-[-0.5px]">
-          {change ? `Change to ${shortName}` : `Book ${shortName}`}
+          {renewing ? `Renew ${shortName}` : `Book ${shortName}`}
         </h1>
-        <p className="text-[15px] text-muted">
-          For {vehicle.registrationNumber} · {vehicle.make} {vehicle.model},{' '}
-          {LABELS.vehicleType[vehicle.vehicleType]}
-        </p>
       </div>
+      <Card>
+        <h2 className="text-[15px] font-semibold mb-3">Included every month</h2>
+        <PlanServices plan={plan} />
+      </Card>
 
-      <section className="pt-[18px] flex flex-col gap-3">
-        <Card className="flex flex-col gap-3">
-          <div className="flex justify-between items-baseline">
-            <span className="font-semibold">Monthly price</span>
-            <span className="font-display font-bold text-[22px]">
-              {priceText(price?.monthlyPrice)}
+      <section className="flex flex-col gap-2.5">
+        <h2 className="text-[17px] font-semibold">Vehicle</h2>
+        {renewing ? (
+          <Card className="font-semibold">
+            <span className="plate">{renewing.registrationNumber}</span>
+            <span className="block text-[13px] text-muted font-normal">
+              Current plan ends {fullDate(renewing.endDate)}
             </span>
-          </div>
-          <div className="dotted-top pt-3 flex flex-col gap-2 text-sm">
-            {plan.activities.map((a) => (
-              <div key={a.id} className="flex gap-2.5">
-                <Check size={18} strokeWidth={2.4} className="text-accent-ink shrink-0" />
-                {a.quotaPerMonth} × {a.name.toLowerCase()}
-                {a.description ? `, ${a.description.toLowerCase()}` : ''}
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card className="flex items-center gap-3.5 py-4">
-          <div className="flex-1">
-            <label htmlFor="asap" className="font-semibold">
-              Start as soon as possible
-            </label>
-            <div className="text-[13px] text-muted mt-0.5">
-              Or tell us a start date when we talk
+          </Card>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2" role="group" aria-label="Your vehicles">
+              {vehicles.map((v) => {
+                const wrongType = v.category !== plan.vehicleCategory;
+                const taken = busy(v);
+                const on = v.id === vehicleId;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={wrongType || taken}
+                    onClick={() => setVehicleId(v.id)}
+                    className={cx(
+                      'flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-left disabled:opacity-50',
+                      on ? 'border-2 border-accent' : 'border border-line',
+                    )}
+                  >
+                    {v.category === 'CAR' ? <Car size={22} /> : <Bike size={22} />}
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-bold plate">{v.registrationNumber}</span>
+                      <span className="block text-[13px] text-muted">
+                        {v.make} {v.model} · {LABELS.vehicleType[v.vehicleType]}
+                        {wrongType
+                          ? ` · ${plan.name} is for ${plan.vehicleCategory === 'CAR' ? 'cars' : 'bikes'}`
+                          : taken
+                            ? ' · already has a plan or request'
+                            : ''}
+                      </span>
+                    </span>
+                    {!wrongType && !taken ? (
+                      <span className="text-sm font-bold">
+                        {priceText(
+                          plan.prices.find((p) => p.vehicleType === v.vehicleType)?.monthlyPrice,
+                        )}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
-          </div>
-          <Switch id="asap" checked={asap} onChange={setAsap} label="Start as soon as possible" />
-        </Card>
+            <FormError error={errors.vehicleId} />
+            {adding ? (
+              <Card className="flex flex-col gap-3">
+                <h3 className="font-semibold">Add a vehicle</h3>
+                <VehicleForm
+                  defaultValues={{ category: plan.vehicleCategory }}
+                  submitLabel="Save vehicle"
+                  onSubmit={async (v) => {
+                    const saved = await addVehicle.mutateAsync(v);
+                    setVehicleId(saved.id);
+                    setAdding(false);
+                  }}
+                  secondary={
+                    <Button variant="ghost" onClick={() => setAdding(false)}>
+                      Cancel
+                    </Button>
+                  }
+                />
+              </Card>
+            ) : (
+              <Button variant="ghost" className="self-start" onClick={() => setAdding(true)}>
+                <Plus size={18} /> Add a new {plan.vehicleCategory === 'CAR' ? 'car' : 'bike'}
+              </Button>
+            )}
+          </>
+        )}
       </section>
 
-      <section className="pt-[22px] flex flex-col gap-2.5">
-        <div className="dotted-top pt-[18px] font-semibold text-[15px]">Select how to continue</div>
-        {wa ? (
-          <OptionRow
-            icon={<WhatsApp size={20} />}
-            title="WhatsApp us"
-            sub="Message is ready with your vehicle details"
-            href={wa}
-            external
-            onClick={() => void record()}
-          />
-        ) : null}
-        {tel ? (
-          <OptionRow
-            icon={<Phone size={20} />}
-            title="Call us"
-            sub={
-              contact?.supportHours ? `Talk to us now, ${contact.supportHours}` : 'Talk to us now'
-            }
-            href={tel}
-            onClick={() => void record()}
-          />
-        ) : null}
-        <OptionRow
-          icon={<Message size={20} />}
-          title="Send an enquiry"
-          sub="We’ll call you back"
-          onClick={async () => {
-            try {
-              setSent(await record());
-            } catch {
-              /* shown below */
-            }
-          }}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[17px] font-semibold">Duration and start</h2>
+        <ChoiceGroup<number>
+          legend="Months"
+          columns={4}
+          options={SUBSCRIPTION_MONTH_OPTIONS.map((m) => ({ value: m, label: String(m) }))}
+          value={months}
+          onChange={setMonths}
         />
-        <FormError error={enquire.error} />
-        {change ? <Notice>Your current plan keeps running until we switch it.</Notice> : null}
+        {renewing ? (
+          <p className="text-[15px]">
+            Starts <b>{fullDate(startDate)}</b>, the day after your current plan ends.
+          </p>
+        ) : (
+          <Field
+            label="Preferred start date"
+            htmlFor="pstart"
+            error={errors.preferredStartDate}
+            hint={`Tomorrow up to ${START_MAX_DAYS} days ahead`}
+          >
+            <Input
+              id="pstart"
+              type="date"
+              min={addDaysIso(today, 1)}
+              max={addDaysIso(today, START_MAX_DAYS)}
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+            />
+          </Field>
+        )}
       </section>
 
-      <p className="mt-auto pt-6 text-[13px] text-muted text-center">
-        Payment is collected in person or by UPI. Your plan starts once we confirm it.{' '}
-        <Link to="/app/enquiries">My enquiries</Link>
-      </p>
+      <Card className="flex flex-col gap-2 text-[15px]">
+        <h2 className="text-[17px] font-semibold mb-1">Summary</h2>
+        {[
+          ['Plan', plan.name],
+          ['Vehicle', vehicle?.registrationNumber ?? '—'],
+          ['Months', String(months)],
+          ['Monthly price', price ? money(price.monthlyPrice) : '—'],
+          ['Starts', fullDate(startDate)],
+        ].map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-4">
+            <span className="text-muted">{k}</span>
+            <span className="font-semibold text-right">{v}</span>
+          </div>
+        ))}
+        <div className="flex justify-between gap-4 dotted-top pt-3 mt-1">
+          <span className="font-semibold">Total</span>
+          <span className="font-display font-bold text-xl">
+            {price ? money(price.monthlyPrice * months) : '—'}
+          </span>
+        </div>
+        <p className="text-[13px] text-muted">Pay by cash or UPI. We’ll contact you to activate.</p>
+      </Card>
+
+      <FormError error={request.error && !Object.keys(errors).length ? request.error : null} />
+      <Button variant="cta" size="lg" loading={request.isPending} onClick={submit}>
+        {renewing ? 'Request renewal' : 'Request plan'}
+      </Button>
     </div>
   );
 }

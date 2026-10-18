@@ -2,15 +2,24 @@
 import { count, eq } from 'drizzle-orm';
 import { getConfig } from '../config';
 import { mobileSchema, optionalEmail, passwordSchema } from '../../shared/schemas/common';
-import { SETTING_KEYS, type SettingKey } from '../../shared/enums';
+import { DEFAULT_BOOKING_SLOTS, SETTING_KEYS, type SettingKey } from '../../shared/enums';
 import { logger } from '../lib/logger';
 import { hashPassword } from '../lib/passwords';
 import { getDb } from './index';
-import { planActivities, planPrices, plans, settings, users } from './schema';
+import {
+  oneTimeServicePrices,
+  oneTimeServices,
+  planActivities,
+  planPrices,
+  plans,
+  settings,
+  users,
+} from './schema';
 
 export async function seed(): Promise<void> {
   await seedAdmin();
   await seedPlans();
+  await seedOneTimeServices();
   await seedSettings();
 }
 
@@ -111,6 +120,49 @@ async function seedPlans() {
   logger.info('Seeded Car Care and Bike Care plans (prices are 0 until an admin sets them)');
 }
 
+/** Inactive with price 0, so nothing shows publicly until an admin prices and activates them. */
+async function seedOneTimeServices() {
+  const db = getDb();
+  const [{ n }] = await db.select({ n: count() }).from(oneTimeServices);
+  if (n > 0) return;
+  const CARS = ['HATCHBACK', 'SEDAN', 'SUV'] as const;
+  const services = [
+    {
+      name: 'Exterior foam wash',
+      description: 'Foam wash at your parking spot.',
+      includes: ['Foam wash', 'Rinse', 'Microfibre dry', 'Tyre wipe'],
+      appliesTo: [...CARS, 'BIKE' as const],
+      durationMinutes: 20,
+    },
+    {
+      name: 'Interior clean',
+      description: 'Inside cleaned and polished.',
+      includes: ['Vacuum', 'Dashboard polish', 'Mats cleaned'],
+      appliesTo: [...CARS],
+      durationMinutes: 35,
+    },
+    {
+      name: 'Full wash',
+      description: 'Exterior foam wash and interior clean together.',
+      includes: ['Exterior foam wash', 'Interior clean'],
+      appliesTo: [...CARS],
+      durationMinutes: 50,
+    },
+  ];
+  await db.transaction(async (tx) => {
+    for (const [i, s] of services.entries()) {
+      const [row] = await tx
+        .insert(oneTimeServices)
+        .values({ ...s, isActive: false, sortOrder: i + 1 })
+        .$returningId();
+      await tx
+        .insert(oneTimeServicePrices)
+        .values(s.appliesTo.map((vehicleType) => ({ serviceId: row.id, vehicleType, price: 0 })));
+    }
+  });
+  logger.info('Seeded one-time wash services (inactive, price 0 until an admin sets them)');
+}
+
 async function seedSettings() {
   const db = getDb();
   const { appName } = getConfig();
@@ -123,6 +175,8 @@ async function seedSettings() {
     whatsapp_default_message: `Hi ${appName}, I'd like to know more about your wash plans.`,
     show_washer_contact: 'true',
     support_email: '',
+    booking_slots: JSON.stringify(DEFAULT_BOOKING_SLOTS),
+    booking_allow_same_day: String(getConfig().booking.allowSameDay),
   };
   const existing = new Set(
     (await db.select({ key: settings.key }).from(settings)).map((r) => r.key),

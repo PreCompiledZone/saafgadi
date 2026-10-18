@@ -1,5 +1,12 @@
 import { LABELS, PAYMENT_MODES, type PaymentMode } from '@shared/enums';
-import type { AdminUserDetail, Paged, PaymentDto, UserDto } from '@shared/types';
+import type {
+  AdminUserDetail,
+  BookingDto,
+  Paged,
+  PaymentDto,
+  SubscriptionDto,
+  UserDto,
+} from '@shared/types';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../../api/client';
@@ -27,14 +34,20 @@ import { todayIst } from '../../lib/forms';
 import { SearchBox, Table, Td, Tr, UserPicker } from './parts';
 import { ReceiptSheet } from './Receipt';
 
-function RecordPaymentSheet({
+export function RecordPaymentSheet({
   onClose,
   onRecorded,
   presetUserId,
+  presetBooking,
+  presetSubscription,
 }: {
   onClose: () => void;
   onRecorded: (p: PaymentDto) => void;
   presetUserId?: number;
+  /** Paying for this one-time booking. */
+  presetBooking?: BookingDto;
+  /** Paying for this plan (e.g. a pending request). */
+  presetSubscription?: SubscriptionDto;
 }) {
   const toast = useToast();
   const [user, setUser] = useState<UserDto | null>(null);
@@ -49,8 +62,21 @@ function RecordPaymentSheet({
     ['admin', 'users', user?.id],
     user ? `/admin/users/${user.id}` : null,
   );
-  const [subscriptionId, setSubscriptionId] = useState('');
-  const [amount, setAmount] = useState('');
+  const userBookings = useApi<Paged<BookingDto>>(
+    ['admin', 'bookings', 'for-user', user?.id],
+    user ? `/admin/bookings${qs({ userId: user.id, pageSize: 50 })}` : null,
+  );
+  /** `s<id>` for a subscription, `b<id>` for a booking, '' for an advance. */
+  const [subscriptionId, setSubscriptionId] = useState(
+    presetBooking ? `b${presetBooking.id}` : presetSubscription ? `s${presetSubscription.id}` : '',
+  );
+  const [amount, setAmount] = useState(
+    presetBooking
+      ? String(Math.max(0, presetBooking.price - presetBooking.paidAmount))
+      : presetSubscription
+        ? String(Math.max(0, presetSubscription.totalAmount - presetSubscription.paidAmount))
+        : '',
+  );
   const [mode, setMode] = useState<PaymentMode>('UPI');
   const [reference, setReference] = useState('');
   const [paidOn, setPaidOn] = useState(todayIst());
@@ -60,6 +86,9 @@ function RecordPaymentSheet({
     [['admin']],
   );
   const subs = (detail.data?.subscriptions ?? []).filter((s) => s.status !== 'CANCELLED');
+  const books = (userBookings.data?.items ?? []).filter(
+    (b) => b.status !== 'CANCELLED' || b.paidAmount > 0,
+  );
 
   return (
     <Sheet open onClose={onClose} title="Record payment">
@@ -74,9 +103,9 @@ function RecordPaymentSheet({
           />
         </Field>
         <Field
-          label="For subscription"
+          label="For"
           htmlFor="psub"
-          hint="Leave as advance if it’s not for a specific plan yet"
+          hint="A plan or a one-time booking; leave as advance if neither yet"
         >
           <Select
             id="psub"
@@ -84,16 +113,28 @@ function RecordPaymentSheet({
             value={subscriptionId}
             onChange={(e) => {
               setSubscriptionId(e.target.value);
-              const s = subs.find((x) => String(x.id) === e.target.value);
+              const s = subs.find((x) => `s${x.id}` === e.target.value);
               if (s && !amount) setAmount(String(Math.max(0, s.totalAmount - s.paidAmount)));
+              const b = books.find((x) => `b${x.id}` === e.target.value);
+              if (b && !amount) setAmount(String(Math.max(0, b.price - b.paidAmount)));
             }}
           >
             <option value="">Advance / not linked</option>
+            {books.length ? (
+              <optgroup label="One-time bookings">
+                {books.map((b) => (
+                  <option key={`b${b.id}`} value={`b${b.id}`}>
+                    {b.ref} · {b.serviceName} · {b.registrationNumber} · {fullDate(b.date)}
+                    {b.paymentStatus === 'UNPAID' ? ' · UNPAID' : ''}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
             {subs.map((s) => (
-              <option key={s.id} value={s.id}>
+              <option key={s.id} value={`s${s.id}`}>
                 {s.registrationNumber} · {s.planName} · {fullDate(s.startDate)}–
                 {fullDate(s.endDate)}
-                {s.isUnpaid ? ' · UNPAID' : ''}
+                {s.status === 'PENDING' ? ' · REQUESTED' : s.isUnpaid ? ' · UNPAID' : ''}
               </option>
             ))}
           </Select>
@@ -146,7 +187,10 @@ function RecordPaymentSheet({
             try {
               const p = await record.mutateAsync({
                 userId: user!.id,
-                subscriptionId: subscriptionId ? Number(subscriptionId) : null,
+                subscriptionId: subscriptionId.startsWith('s')
+                  ? Number(subscriptionId.slice(1))
+                  : null,
+                bookingId: subscriptionId.startsWith('b') ? Number(subscriptionId.slice(1)) : null,
                 amount: Number(amount),
                 mode,
                 reference: reference || null,
@@ -304,7 +348,9 @@ export function Payments() {
                             <span className="font-bold plate whitespace-nowrap">
                               {p.registrationNumber}
                             </span>
-                            <div className="text-xs text-muted">{p.planName}</div>
+                            <div className="text-xs text-muted">
+                              {p.planName ?? (p.serviceName ? `One-time · ${p.serviceName}` : null)}
+                            </div>
                           </>
                         ) : (
                           'Advance'

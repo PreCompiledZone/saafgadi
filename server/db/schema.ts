@@ -19,6 +19,9 @@ import {
 } from 'drizzle-orm/mysql-core';
 import {
   AUDIT_ACTIONS,
+  BOOKING_PAYMENT_STATUSES,
+  BOOKING_SLOTS,
+  BOOKING_STATUSES,
   CAR_TYPES,
   ENQUIRY_STATUSES,
   ENQUIRY_TYPES,
@@ -213,6 +216,8 @@ export const payments = mysqlTable(
     amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
     mode: mysqlEnum('mode', PAYMENT_MODES).notNull(),
     reference: varchar('reference', { length: 120 }),
+    /** Either a subscription or a one-time booking (or neither: an advance). */
+    bookingId: ref('booking_id').references((): AnyMySqlColumn => bookings.id),
     paidOn: businessDate('paid_on').notNull(),
     recordedBy: ref('recorded_by')
       .notNull()
@@ -224,6 +229,7 @@ export const payments = mysqlTable(
     index('payments_paid_on_idx').on(t.paidOn),
     index('payments_user_idx').on(t.userId),
     index('payments_subscription_idx').on(t.subscriptionId),
+    index('payments_booking_idx').on(t.bookingId),
   ],
 );
 
@@ -264,6 +270,105 @@ export const washLogs = mysqlTable(
     index('wash_logs_washer_date_idx').on(t.washerId, t.serviceDate),
     index('wash_logs_vehicle_date_idx').on(t.vehicleId, t.serviceDate),
   ],
+);
+
+/** One-time wash services, a separate product from monthly plans. */
+export const oneTimeServices = mysqlTable('one_time_services', {
+  id: id(),
+  name: varchar('name', { length: 120 }).notNull(),
+  description: varchar('description', { length: 500 }),
+  /** string[] shown as a checklist. */
+  includes: json('includes').$type<string[]>().notNull(),
+  /** VehicleType[] it can be booked for. */
+  appliesTo: json('applies_to').$type<(typeof VEHICLE_TYPES)[number][]>().notNull(),
+  durationMinutes: int('duration_minutes').notNull(),
+  isActive: boolean('is_active').notNull().default(false),
+  sortOrder: int('sort_order').notNull().default(0),
+  ...timestamps,
+});
+
+export const oneTimeServicePrices = mysqlTable(
+  'one_time_service_prices',
+  {
+    id: id(),
+    serviceId: ref('service_id')
+      .notNull()
+      .references(() => oneTimeServices.id),
+    vehicleType: mysqlEnum('vehicle_type', VEHICLE_TYPES).notNull(),
+    /** Whole rupees. */
+    price: int('price').notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('one_time_service_prices_uq').on(t.serviceId, t.vehicleType)],
+);
+
+/** A one-time wash. Service, price, vehicle and address are snapshots taken at booking time. */
+export const bookings = mysqlTable(
+  'bookings',
+  {
+    id: id(),
+    userId: ref('user_id')
+      .notNull()
+      .references(() => users.id),
+    serviceId: ref('service_id')
+      .notNull()
+      .references(() => oneTimeServices.id),
+    serviceName: varchar('service_name', { length: 120 }).notNull(),
+    vehicleType: mysqlEnum('vehicle_type', VEHICLE_TYPES).notNull(),
+    price: int('price').notNull(),
+    /** Set only when the customer picked (or saved) a vehicle on their account. */
+    vehicleId: ref('vehicle_id').references(() => vehicles.id),
+    registrationNumber: varchar('registration_number', { length: 12 }).notNull(),
+    vehicleMake: varchar('vehicle_make', { length: 60 }),
+    vehicleModel: varchar('vehicle_model', { length: 60 }),
+    vehicleColor: varchar('vehicle_color', { length: 40 }).notNull(),
+    addressLine: varchar('address_line', { length: 255 }),
+    societyOrBuilding: varchar('society_or_building', { length: 160 }).notNull(),
+    flatOrHouseNo: varchar('flat_or_house_no', { length: 60 }).notNull(),
+    area: varchar('area', { length: 120 }).notNull(),
+    city: varchar('city', { length: 80 }).notNull(),
+    pincode: varchar('pincode', { length: 6 }).notNull(),
+    parkingNotes: varchar('parking_notes', { length: 255 }),
+    preferredDate: businessDate('preferred_date').notNull(),
+    preferredSlot: mysqlEnum('preferred_slot', BOOKING_SLOTS).notNull(),
+    status: mysqlEnum('status', BOOKING_STATUSES).notNull().default('REQUESTED'),
+    assignedWasherId: ref('assigned_washer_id').references(() => users.id),
+    scheduledDate: businessDate('scheduled_date'),
+    scheduledSlot: mysqlEnum('scheduled_slot', BOOKING_SLOTS),
+    completedAt: datetime('completed_at', { mode: 'date' }),
+    notDoneReason: varchar('not_done_reason', { length: 255 }),
+    cancelReason: varchar('cancel_reason', { length: 255 }),
+    customerNotes: varchar('customer_notes', { length: 500 }),
+    adminNotes: text('admin_notes'),
+    paymentStatus: mysqlEnum('payment_status', BOOKING_PAYMENT_STATUSES)
+      .notNull()
+      .default('UNPAID'),
+    ...timestamps,
+  },
+  (t) => [
+    index('bookings_user_idx').on(t.userId, t.status),
+    index('bookings_status_idx').on(t.status, t.preferredDate),
+    index('bookings_washer_date_idx').on(t.assignedWasherId, t.scheduledDate),
+    index('bookings_scheduled_idx').on(t.scheduledDate, t.scheduledSlot),
+  ],
+);
+
+/** Status history of a booking, for the customer's timeline and the admin's audit. */
+export const bookingEvents = mysqlTable(
+  'booking_events',
+  {
+    id: id(),
+    bookingId: ref('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    fromStatus: mysqlEnum('from_status', BOOKING_STATUSES),
+    toStatus: mysqlEnum('to_status', BOOKING_STATUSES).notNull(),
+    actorUserId: ref('actor_user_id').references(() => users.id),
+    note: varchar('note', { length: 500 }),
+    /** App clock, so tests can control it. */
+    createdAt: datetime('created_at', { mode: 'date' }).notNull(),
+  },
+  (t) => [index('booking_events_booking_idx').on(t.bookingId)],
 );
 
 export const enquiries = mysqlTable(

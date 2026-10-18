@@ -12,6 +12,14 @@ import { errorHandler, notFoundApi } from './middleware/error';
 import { authRouter } from './modules/auth/auth.routes';
 import { adminDashboardRouter, meDashboardRouter } from './modules/dashboard/dashboard.routes';
 import { adminEnquiriesRouter, meEnquiriesRouter } from './modules/enquiries/enquiries.routes';
+import {
+  adminBookingsRouter,
+  adminServicesRouter,
+  meWashesRouter,
+  publicServicesRouter,
+  userBookingsRouter,
+  washerBookingsRouter,
+} from './modules/one-time/one-time.routes';
 import { adminPaymentsRouter } from './modules/payments/payments.routes';
 import { adminPlansRouter, publicPlansRouter } from './modules/plans/plans.routes';
 import { adminSettingsRouter, publicSettingsRouter } from './modules/settings/settings.routes';
@@ -19,6 +27,7 @@ import { adminSocietiesRouter, publicSocietiesRouter } from './modules/societies
 import {
   adminSubscriptionsRouter,
   meSubscriptionsRouter,
+  userSubscriptionsRouter,
 } from './modules/subscriptions/subscriptions.routes';
 import {
   adminAdminsRouter,
@@ -85,6 +94,7 @@ export function createApp() {
   api.use(loadUser);
   api.use('/auth', authRouter);
   api.use('/public', publicPlansRouter, publicSettingsRouter, publicSocietiesRouter);
+  api.use('/one-time-services', publicServicesRouter);
 
   const me = Router();
   me.use(requireRole('USER'));
@@ -96,9 +106,13 @@ export function createApp() {
   me.use('/wash-logs', meWashLogsRouter);
   me.use('/enquiries', meEnquiriesRouter);
   me.use('/dashboard', meDashboardRouter);
+  me.use('/washes', meWashesRouter);
   api.use('/me', me);
+  api.use('/bookings', requireRole('USER'), requireVerifiedEmail, userBookingsRouter);
+  api.use('/subscriptions', requireRole('USER'), requireVerifiedEmail, userSubscriptionsRouter);
 
   api.use('/washer', requireRole('WASHER'), washerRouter);
+  api.use('/washer/bookings', requireRole('WASHER'), washerBookingsRouter);
 
   const admin = Router();
   admin.use(requireRole('ADMIN'));
@@ -109,6 +123,8 @@ export function createApp() {
   admin.use('/admins', adminAdminsRouter);
   admin.use('/vehicles', adminVehiclesRouter);
   admin.use('/plans', adminPlansRouter);
+  admin.use('/one-time-services', adminServicesRouter);
+  admin.use('/bookings', adminBookingsRouter);
   admin.use('/subscriptions', adminSubscriptionsRouter);
   admin.use('/payments', adminPaymentsRouter);
   admin.use('/wash-logs', adminWashLogsRouter);

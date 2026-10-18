@@ -88,7 +88,7 @@ export function AdminDashboard() {
             }
           />
           <TodayBar w={d.washes} />
-          <section aria-label="Key numbers" className="grid gap-3.5 grid-cols-2 xl:grid-cols-4">
+          <section aria-label="Key numbers" className="grid gap-3.5 grid-cols-2 xl:grid-cols-3">
             <Stat
               label="Active subscriptions"
               value={d.active.total}
@@ -120,6 +120,38 @@ export function AdminDashboard() {
               label="Collected this month"
               value={money(d.paymentsThisMonth.total)}
               sub={plural(d.paymentsThisMonth.count, 'payment')}
+            />
+            <Stat
+              label="Pending activations"
+              value={d.pendingActivations}
+              tone={d.pendingActivations ? 'accent' : undefined}
+              sub={
+                <Link to="/admin/plan-requests" className="font-semibold no-underline">
+                  Monthly plan requests
+                </Link>
+              }
+            />
+            <Stat
+              label="New bookings"
+              value={d.bookings.requested}
+              tone={d.bookings.requested ? 'accent' : undefined}
+              sub={
+                <Link to="/admin/bookings?status=REQUESTED" className="font-semibold no-underline">
+                  One-time, to confirm
+                </Link>
+              }
+            />
+            <Stat
+              label="One-time jobs today"
+              value={d.bookings.today}
+              sub={
+                <Link
+                  to={`/admin/bookings?status=ALL&from=${d.today}&to=${d.today}`}
+                  className="no-underline"
+                >
+                  See today’s jobs
+                </Link>
+              }
             />
           </section>
 

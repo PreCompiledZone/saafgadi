@@ -1,9 +1,9 @@
 // The one-time code email: subject, plain text and HTML, in the brand colours.
 import type { OtpPurpose } from '../../../shared/enums';
 
-const PURPLE = '#8B3FC7';
-const INK = '#1E1B22';
-const BG = '#F4F1EE';
+export const PURPLE = '#8B3FC7';
+export const INK = '#1E1B22';
+export const BG = '#F4F1EE';
 
 const WHAT: Record<OtpPurpose, string> = {
   SIGNUP: 'to create your account',
@@ -11,7 +11,7 @@ const WHAT: Record<OtpPurpose, string> = {
   RESET_PASSWORD: 'to reset your password',
 };
 
-const escape = (s: string) =>
+export const escape = (s: string) =>
   s.replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,

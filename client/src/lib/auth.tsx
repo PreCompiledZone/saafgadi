@@ -1,3 +1,4 @@
+import { clearDashboardTab } from './dashboardTab';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Role } from '@shared/enums';
 import type { SessionUser } from '@shared/types';
@@ -23,6 +24,7 @@ export function useAuthActions() {
       qc.setQueryData(['auth', 'me'], { user });
     },
     async logout() {
+      clearDashboardTab();
       await api.post('/auth/logout');
       qc.clear();
       qc.setQueryData(['auth', 'me'], { user: null });

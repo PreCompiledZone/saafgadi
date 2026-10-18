@@ -7,7 +7,8 @@ import { formatRegistration } from '../../../shared/registration';
 import type { recordPaymentSchema } from '../../../shared/schemas';
 import type { Paged, PaymentDto } from '../../../shared/types';
 import { getDb, type DbOrTx } from '../../db';
-import { payments, plans, subscriptions, users, vehicles } from '../../db/schema';
+import { bookings, payments, plans, subscriptions, users, vehicles } from '../../db/schema';
+import { refreshPaymentStatus } from '../one-time/bookings.service';
 import { audit } from '../../lib/audit';
 import { badRequest } from '../../lib/errors';
 import { toDecimal, toNumber } from '../../lib/money';
@@ -49,6 +50,8 @@ function baseQuery(db: DbOrTx) {
       userName: users.name,
       userMobile: users.mobile,
       reg: vehicles.registrationNumber,
+      bookingReg: bookings.registrationNumber,
+      serviceName: bookings.serviceName,
       planName: plans.name,
       startDate: subscriptions.startDate,
       endDate: subscriptions.endDate,
@@ -62,6 +65,7 @@ function baseQuery(db: DbOrTx) {
     .leftJoin(subscriptions, eq(subscriptions.id, payments.subscriptionId))
     .leftJoin(vehicles, eq(vehicles.id, subscriptions.vehicleId))
     .leftJoin(plans, eq(plans.id, subscriptions.planId))
+    .leftJoin(bookings, eq(bookings.id, payments.bookingId))
     .$dynamic();
 }
 
@@ -71,10 +75,13 @@ function toDto(r: Row): PaymentDto {
   return {
     id: r.p.id,
     subscriptionId: r.p.subscriptionId,
+    bookingId: r.p.bookingId,
+    serviceName: r.serviceName,
     userId: r.p.userId,
     userName: r.userName,
     userMobile: r.userMobile,
-    registrationNumber: r.reg ? formatRegistration(r.reg) : null,
+    registrationNumber:
+      (r.reg ?? r.bookingReg) ? formatRegistration((r.reg ?? r.bookingReg)!) : null,
     planName: r.planName,
     periodStart: r.startDate,
     periodEnd: r.endDate,
@@ -120,6 +127,7 @@ export async function insertPayment(
   p: {
     userId: number;
     subscriptionId: number | null;
+    bookingId?: number | null;
     amount: number;
     mode: PaymentMode;
     reference: string | null;
@@ -132,6 +140,7 @@ export async function insertPayment(
     .values({
       userId: p.userId,
       subscriptionId: p.subscriptionId,
+      bookingId: p.bookingId ?? null,
       amount: toDecimal(p.amount),
       mode: p.mode,
       reference: p.reference,
@@ -143,6 +152,7 @@ export async function insertPayment(
   await audit(db, actorId, 'PAYMENT_RECORDED', 'payment', row.id, {
     userId: p.userId,
     subscriptionId: p.subscriptionId,
+    bookingId: p.bookingId ?? null,
     amount: p.amount,
     mode: p.mode,
   });
@@ -164,14 +174,28 @@ export async function recordPayment(
       throw badRequest('That subscription does not belong to this customer');
     }
   }
-  const id = await insertPayment(db, actorId, {
-    userId: input.userId,
-    subscriptionId: input.subscriptionId ?? null,
-    amount: input.amount,
-    mode: input.mode,
-    reference: input.reference,
-    paidOn: input.paidOn,
-    notes: input.notes,
+  if (input.bookingId) {
+    const [b] = await db
+      .select({ userId: bookings.userId })
+      .from(bookings)
+      .where(eq(bookings.id, input.bookingId));
+    if (!b || b.userId !== input.userId) {
+      throw badRequest('That booking does not belong to this customer');
+    }
+  }
+  const id = await db.transaction(async (tx) => {
+    const paymentId = await insertPayment(tx, actorId, {
+      userId: input.userId,
+      subscriptionId: input.subscriptionId ?? null,
+      bookingId: input.bookingId ?? null,
+      amount: input.amount,
+      mode: input.mode,
+      reference: input.reference,
+      paidOn: input.paidOn,
+      notes: input.notes,
+    });
+    if (input.bookingId) await refreshPaymentStatus(tx, input.bookingId);
+    return paymentId;
   });
   const [row] = await baseQuery(db).where(eq(payments.id, id));
   return toDto(row);
@@ -213,7 +237,7 @@ export async function paymentsCsv(f: Omit<PaymentFilter, 'page' | 'pageSize'>): 
         LABELS.paymentMode[p.mode],
         p.reference,
         p.registrationNumber,
-        p.planName,
+        p.planName ?? (p.serviceName ? `One-time: ${p.serviceName}` : null),
         p.subscriptionId,
         p.recordedByName,
         p.notes,

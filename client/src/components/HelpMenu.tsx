@@ -18,7 +18,7 @@ const row =
  * Below `sm` the popover is positioned against the nearest positioned ancestor
  * (the header actions), so it lines up with the page gutter instead of overflowing.
  */
-export function HelpMenu() {
+export function HelpMenu({ message }: { message?: string } = {}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -27,7 +27,7 @@ export function HelpMenu() {
   const { pathname } = useLocation();
   const { user } = useSession();
   const contact = useContact().data;
-  const wa = whatsappLink(contact, visitorHelpMessage(contact));
+  const wa = whatsappLink(contact, message ?? visitorHelpMessage(contact));
   const tel = callLink(contact);
 
   useEffect(() => setOpen(false), [pathname]);

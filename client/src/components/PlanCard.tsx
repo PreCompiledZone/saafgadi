@@ -19,6 +19,36 @@ export function activityLine(a: PlanDto['activities'][number]): string {
   return `${plural(a.quotaPerMonth, 'time')} a month${spacing}`;
 }
 
+/** Every service in the plan on its own line, with a tick. */
+export function PlanServices({
+  plan,
+  className,
+}: {
+  plan: Pick<PlanDto, 'activities'>;
+  className?: string;
+}) {
+  return (
+    <ul className={`flex flex-col gap-2 text-[15px] ${className ?? ''}`}>
+      {plan.activities
+        .filter((a) => a.isActive)
+        .map((a) => (
+          <li key={a.id} className="flex gap-2.5">
+            <span className="w-5 h-5 mt-0.5 shrink-0 rounded-full bg-accent-soft text-accent-ink flex items-center justify-center">
+              <Check size={13} strokeWidth={3.2} />
+            </span>
+            <span>
+              <b className="font-semibold">{a.quotaPerMonth}</b> × {a.name}
+              <span className="block text-[13px] text-muted">
+                {a.description ? `${a.description} · ` : ''}
+                {activityLine(a)}
+              </span>
+            </span>
+          </li>
+        ))}
+    </ul>
+  );
+}
+
 export function PlanIcon({
   plan,
   size = 24,
@@ -58,21 +88,10 @@ export function PlanCard({
         </div>
         {single ? <div className="font-bold">{priceText(prices[0].monthlyPrice)}</div> : null}
       </div>
-      {plan.description ? <p className="text-[14px] text-muted -mt-1">{plan.description}</p> : null}
-      <ul className="flex flex-col gap-2 text-[15px]">
-        {plan.activities.map((a) => (
-          <li key={a.id} className="flex gap-2.5">
-            <Check size={20} strokeWidth={2.4} className="text-accent-ink shrink-0" />
-            <span>
-              <b className="font-semibold">{a.quotaPerMonth}</b> × {a.name}
-              <span className="block text-[13px] text-muted">
-                {a.description ? `${a.description} · ` : ''}
-                {activityLine(a)}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
+      {plan.description ? (
+        <p className="text-[14px] text-muted -mt-1 pl-14">{plan.description}</p>
+      ) : null}
+      <PlanServices plan={plan} className="pl-14" />
       {!single && prices.length ? (
         <div
           className="grid gap-2"

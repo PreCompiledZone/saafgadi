@@ -4,6 +4,7 @@ import { Logo, PublicHeaderActions } from '../../components/brand';
 import { LogoMark, splitWordmark } from '../../components/LogoMark';
 import { FooterContact } from '../../components/contact';
 import { Check, ChevronRight, Interior, Wash } from '../../components/icons';
+import { OneTimeServiceList, PlanKindToggle, usePlanKind } from '../../components/oneTime';
 import { PlanCard } from '../../components/PlanCard';
 import { Dot, LinkButton, Spinner, TimelineItem } from '../../components/ui';
 import { HOME_FOR, useSession } from '../../lib/auth';
@@ -64,6 +65,7 @@ export function Landing() {
   const contact = useContact().data;
   const name = useAppName();
   const { user } = useSession();
+  const [kind, setKind] = usePlanKind();
 
   return (
     <div className="mx-auto max-w-5xl flex flex-col min-h-dvh">
@@ -133,7 +135,10 @@ export function Landing() {
 
         <section className="px-5 py-6 md:px-0 md:pt-6 flex flex-col gap-3" id="plans">
           <h2 className="text-xl font-semibold mb-1">Plans</h2>
-          {plans.isLoading ? (
+          <PlanKindToggle value={kind} onChange={setKind} />
+          {kind === 'one-time' ? (
+            <OneTimeServiceList className="lg:grid-cols-2" />
+          ) : plans.isLoading ? (
             <div className="py-8 flex justify-center text-accent">
               <Spinner />
             </div>

@@ -7,6 +7,9 @@ import { WasherLayout } from './layouts/WasherLayout';
 import { HOME_FOR, RequireRole, useSession } from './lib/auth';
 import { Activate } from './pages/admin/Activate';
 import { Admins } from './pages/admin/Admins';
+import { AdminBookings } from './pages/admin/Bookings';
+import { OneTimeServices } from './pages/admin/OneTimeServices';
+import { PlanRequests } from './pages/admin/PlanRequests';
 import { AdminDashboard } from './pages/admin/Dashboard';
 import { AdminEnquiries } from './pages/admin/Enquiries';
 import { Payments } from './pages/admin/Payments';
@@ -28,11 +31,11 @@ import { Signup } from './pages/public/Signup';
 import { BookPlan } from './pages/user/BookPlan';
 import { Dashboard } from './pages/user/Dashboard';
 import { Enquiries } from './pages/user/Enquiries';
-import { History } from './pages/user/History';
+import { BookOneTime } from './pages/user/BookOneTime';
+import { MyWashes } from './pages/user/MyWashes';
 import { Plans } from './pages/user/Plans';
 import { Profile } from './pages/user/Profile';
 import { Vehicles } from './pages/user/Vehicles';
-import { Welcome } from './pages/user/Welcome';
 import { WasherHistory } from './pages/washer/History';
 import { WasherProfile } from './pages/washer/Profile';
 import { Today } from './pages/washer/Today';
@@ -96,8 +99,8 @@ export function App() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route path="welcome" element={<Welcome />} />
-        <Route path="history" element={<History />} />
+        <Route path="history" element={<MyWashes />} />
+        <Route path="book" element={<BookOneTime />} />
         <Route path="vehicles" element={<Vehicles />} />
         <Route path="plans" element={<Plans />} />
         <Route path="plans/:planId/book" element={<BookPlan />} />
@@ -136,6 +139,9 @@ export function App() {
         <Route path="societies/:id" element={<SocietyDetailPage />} />
         <Route path="vehicles" element={<AdminVehicles />} />
         <Route path="plans" element={<AdminPlans />} />
+        <Route path="one-time-services" element={<OneTimeServices />} />
+        <Route path="bookings" element={<AdminBookings />} />
+        <Route path="plan-requests" element={<PlanRequests />} />
         <Route path="payments" element={<Payments />} />
         <Route path="wash-logs" element={<WashLogs />} />
         <Route path="enquiries" element={<AdminEnquiries />} />

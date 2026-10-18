@@ -1,7 +1,17 @@
+import { formatInTimeZone } from 'date-fns-tz';
+import { LABELS, parseSlots } from '../../../shared/enums';
+import { getConfig } from '../../config';
+import { now } from '../../lib/clock';
+import { bookingCounts, listMyBookings } from '../one-time/bookings.service';
+import { listServices } from '../one-time/services.service';
+import { expireStalePending } from '../subscriptions/requests.service';
 import { and, asc, count, desc, eq, gte, inArray, lte, sql, sum } from 'drizzle-orm';
 import { qualified } from '../../lib/sql';
 import type {
+  ActivityProgress,
   AdminDashboard,
+  TodayStatus,
+  WashLogDto,
   SocietyToday,
   UserDashboard,
   UserVehicleSummary,
@@ -12,6 +22,8 @@ import { getDb } from '../../db';
 import {
   payments,
   planActivities,
+  planPrices,
+  plans,
   societies,
   subscriptions,
   users,
@@ -32,6 +44,7 @@ import { coveringDate, findLogs, todaySummary } from '../wash-logs/wash-logs.ser
 
 export async function adminDashboard(): Promise<AdminDashboard> {
   const db = getDb();
+  await expireStalePending(db);
   const t = today();
   const month = calendarMonth(t);
   const active = eq(subscriptions.status, 'ACTIVE');
@@ -92,6 +105,10 @@ export async function adminDashboard(): Promise<AdminDashboard> {
     expired: { count: expired.n },
     unpaid: { count: unpaid.n },
     openEnquiries: { count: openCount, items: open.items },
+    bookings: await bookingCounts(),
+    pendingActivations: (
+      await db.select({ n: count() }).from(subscriptions).where(eq(subscriptions.status, 'PENDING'))
+    )[0].n,
     paymentsThisMonth: { total: toNumber(paid.total), count: paid.n },
     washers: washers.map((w) => {
       const s = summary.byWasher.get(w.id);
@@ -171,16 +188,88 @@ async function washerContact(
   return w && w.role === 'WASHER' && w.isActive ? { name: w.name, mobile: w.mobile } : null;
 }
 
+function greetingNow(): UserDashboard['greeting'] {
+  const hour = Number(formatInTimeZone(now(), getConfig().timezone, 'H'));
+  return hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+}
+
+async function lowestMonthlyPrice(): Promise<number | null> {
+  const [row] = await getDb()
+    .select({ min: sql<string | null>`min(${planPrices.monthlyPrice})` })
+    .from(planPrices)
+    .innerJoin(plans, eq(plans.id, planPrices.planId))
+    .where(
+      and(
+        eq(plans.isActive, true),
+        eq(planPrices.isActive, true),
+        sql`${planPrices.monthlyPrice} > 0`,
+      ),
+    );
+  return row?.min === null || row?.min === undefined ? null : toNumber(row.min);
+}
+
+/** Washed / missed (logged today), due, or not due with the next date. */
+function todayStatusFor(
+  todayLogs: WashLogDto[],
+  progress: ActivityProgress[],
+  t: string,
+): { todayStatus: TodayStatus; nextWashDate: string | null } {
+  const upcoming = progress
+    .map((p) => p.nextDueDate)
+    .filter((d): d is string => !!d && d > t)
+    .sort()[0];
+  const done = todayLogs.find((l) => l.status === 'DONE');
+  if (done) {
+    return {
+      todayStatus: {
+        kind: 'WASHED',
+        at: done.performedAt,
+        washerFirstName: done.washerName.trim().split(/\s+/)[0],
+        activityName: done.activityName,
+      },
+      nextWashDate: upcoming ?? null,
+    };
+  }
+  const missed = todayLogs.find((l) => l.status === 'NOT_DONE');
+  if (missed) {
+    return {
+      todayStatus: {
+        kind: 'MISSED',
+        reason: [missed.reason ? LABELS.reason[missed.reason] : null, missed.notes]
+          .filter(Boolean)
+          .join(': '),
+      },
+      nextWashDate: upcoming ?? null,
+    };
+  }
+  if (progress.some((p) => p.state === 'DUE')) {
+    return { todayStatus: { kind: 'DUE' }, nextWashDate: t };
+  }
+  return {
+    todayStatus: { kind: 'NOT_DUE', next: upcoming ?? null },
+    nextWashDate: upcoming ?? null,
+  };
+}
+
 export async function userDashboard(userId: number, name: string): Promise<UserDashboard> {
   const db = getDb();
+  await expireStalePending(db);
   const t = today();
-  const vehicles = (await listUserVehicles(userId)).filter((v) => v.isActive);
-  const subs = await findSubscriptions(db, t, eq(subscriptions.userId, userId));
+  const window = getConfig().plans.renewWindowDays;
+  const [vehicles, subs, settings, bookings, services, monthlyFrom] = await Promise.all([
+    listUserVehicles(userId).then((l) => l.filter((v) => v.isActive)),
+    findSubscriptions(db, t, eq(subscriptions.userId, userId)),
+    getSettings(),
+    listMyBookings(userId, {}),
+    listServices(true),
+    lowestMonthlyPrice(),
+  ]);
+  const showWasher = settings.show_washer_contact !== 'false';
   const out: UserVehicleSummary[] = [];
-  const showWasher = (await getSettings()).show_washer_contact !== 'false';
 
   for (const v of vehicles) {
-    const mine = subs.filter((s) => s.vehicleId === v.id && s.status !== 'PENDING');
+    const mine = subs.filter((s) => s.vehicleId === v.id);
+    const pending = mine.find((s) => s.status === 'PENDING') ?? null;
     const live = mine.filter((s) => s.status === 'ACTIVE');
     const current = live.find((s) => s.startDate <= t && s.endDate >= t) ?? null;
     const upcoming =
@@ -188,12 +277,14 @@ export async function userDashboard(userId: number, name: string): Promise<UserD
         .filter((s) => s.startDate > t)
         .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null;
     // Most recent one that has ended (expired or cancelled), shown when nothing is current.
-    const past = mine.find((s) => s.startDate <= t && s !== current) ?? null;
-    const shown = current ?? past;
+    const past =
+      mine.find((s) => s.status !== 'PENDING' && s.startDate <= t && s !== current) ?? null;
+    const shown = current ?? upcoming ?? past;
 
     let progress: UserVehicleSummary['progress'] = [];
+    let status: ReturnType<typeof todayStatusFor> | null = null;
     if (current) {
-      const [acts, logs] = await Promise.all([
+      const [acts, logs, todayLogs] = await Promise.all([
         db
           .select()
           .from(planActivities)
@@ -212,21 +303,60 @@ export async function userDashboard(userId: number, name: string): Promise<UserD
               gte(washLogs.serviceDate, addDays(t, -62)),
             ),
           ),
+        findLogs(db, and(eq(washLogs.subscriptionId, current.id), eq(washLogs.serviceDate, t))),
       ]);
       progress = acts.map((a) => activityStatus({ sub: current, activity: a, logs, today: t }));
+      status = todayStatusFor(todayLogs, progress, t);
     }
 
-    const recent = await findLogs(db, eq(washLogs.vehicleId, v.id), { limit: 5 });
+    const recent = await findLogs(db, eq(washLogs.vehicleId, v.id), { limit: 3 });
     out.push({
       vehicle: v,
       displayStatus:
-        current?.displayStatus ?? upcoming?.displayStatus ?? past?.displayStatus ?? 'NO_PLAN',
+        current?.displayStatus ??
+        upcoming?.displayStatus ??
+        pending?.displayStatus ??
+        past?.displayStatus ??
+        'NO_PLAN',
       subscription: shown,
       upcoming,
       progress,
       recent,
       washer: showWasher ? await washerContact(current ?? upcoming) : null,
+      pending,
+      todayStatus: current
+        ? status!.todayStatus
+        : upcoming
+          ? { kind: 'STARTS', date: upcoming.startDate }
+          : null,
+      nextWashDate: status?.nextWashDate ?? null,
+      canRenew: !!current && current.daysLeft <= window && !pending && !upcoming,
     });
   }
-  return { today: t, name, vehicles: out };
+
+  const priced = services.flatMap((s) => s.prices.map((p) => p.price)).filter((p) => p > 0);
+  const active = out.some(
+    (v) => v.subscription?.status === 'ACTIVE' && v.subscription.endDate >= t,
+  );
+  const upcomingBookings = bookings
+    .filter((b) => b.status === 'REQUESTED' || b.status === 'CONFIRMED')
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    today: t,
+    name,
+    greeting: greetingNow(),
+    state: active ? 'active' : 'none',
+    defaultTab: active || out.some((v) => v.pending) ? 'monthly' : 'one-time',
+    badges: {
+      monthly: out.some((v) => v.pending || v.canRenew),
+      oneTime: upcomingBookings.length > 0,
+    },
+    vehicles: out,
+    upcomingBookings,
+    oneTimeServices: services,
+    lowestOneTimePrice: priced.length ? Math.min(...priced) : null,
+    lowestMonthlyPrice: monthlyFrom,
+    renewWindowDays: window,
+    slots: parseSlots(settings.booking_slots),
+  };
 }
